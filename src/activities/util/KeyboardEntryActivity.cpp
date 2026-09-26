@@ -20,8 +20,9 @@ namespace fui = freeink::ui;
 namespace {
 
 constexpr fui::ActionId ACTION_KEY = 1;
-constexpr int BUTTON_KEY_HEIGHT = 44;
+constexpr int BUTTON_KEY_HEIGHT = 42;
 constexpr int BUTTON_KEY_ROW_GAP = 0;
+constexpr int BUTTON_KEY_BOTTOM_SHIFT = 10;
 constexpr int SIDE_HINT_CLEARANCE = 6;
 
 // ---------------------------------------------------------------------------
@@ -531,8 +532,8 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
     width = std::min(width, pageWidth - 2 * (metrics.sideButtonHintsWidth + SIDE_HINT_CLEARANCE));
   }
   const int x = (pageWidth - width) / 2;
-  const int y =
-      pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing - height + metrics.keyboardVerticalOffset;
+  const int y = pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing - height +
+                metrics.keyboardVerticalOffset + (buttonOnly ? BUTTON_KEY_BOTTOM_SHIFT : 0);
   return fui::Rect{static_cast<int16_t>(x), static_cast<int16_t>(y), static_cast<int16_t>(width),
                    static_cast<int16_t>(height)};
 }
@@ -996,7 +997,7 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   // table while this render builds the next generation.
   fui::GfxRendererTarget target(renderer);
   target.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
-  target.setFont(fui::GfxRendererTarget::FONT_BODY, mappedInput.hasTouchHardware() ? UI_12_FONT_ID : SMALL_FONT_ID);
+  target.setFont(fui::GfxRendererTarget::FONT_BODY, UI_12_FONT_ID);
   const fui::DeviceContext device = target.deviceContext();
   const fui::InputSnapshot noInput{};
   interactions.beginPublishCycle();
