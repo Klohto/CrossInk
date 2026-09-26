@@ -669,9 +669,9 @@ CrossInk supports loading additional fonts from the SD card, extending beyond th
 
 There are three ways to install fonts:
 
-1. **Download from device (recommended):** Go to **Settings -> Reader -> Font Options -> Manage Fonts**, browse the available font families, and select one to download over Wi-Fi.
-2. **Upload via web interface:** While in **File Transfer** mode, open the web UI in a browser and navigate to the **Fonts** tab to upload `.cpfont` files.
-3. **Manual SD card copy:** Download font files from the [CrossInk-fonts repository](https://github.com/uxjulia/crossink-fonts/releases) and copy them to `/.fonts/` (preferred) or `/fonts/` on your SD card.
+1. **Manual SD card copy (recommended):** Download font files from [Inky](https://inky.crossink.dev/#downloads) and copy them to `/.fonts/` (preferred) or `/fonts/` on your SD card.
+2. **Download from device:** Go to **Settings -> Reader -> Font Options -> Manage Fonts**, browse the available font families, and select one to download over Wi-Fi. Note that downloading over Wi-Fi can be unstable. If you experience download errors, please use one of the alternate methods.
+3. **Upload via web interface:** While in **File Transfer** mode, open the web UI in a browser and navigate to the **Fonts** tab to upload `.cpfont` files. For supported devices, `.ttf` font files can also be uploaded.
 
 Once installed, custom fonts appear in **Settings -> Reader -> Font Options -> Font Family** alongside the built-in fonts.
 

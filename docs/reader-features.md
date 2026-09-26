@@ -82,6 +82,19 @@ Related docs:
 
 - [SD Card Fonts](./sd-card-fonts.md)
 
+## Custom TTF Fonts
+
+On ESP32-S3 readers, you can use your own static TrueType (`.ttf`) fonts. Copy
+the files into `/fonts` on the SD card, either together or in a folder named
+after the font family. Restart the reader or refresh its font list, then choose
+the family from the font picker.
+
+For the full range of text styles, include all four faces: regular, bold,
+italic, and bold italic. A family with fewer faces can still be used, but some
+styles will fall back to another face. Variable fonts are not supported.
+
+See [Scalable Fonts](./scalable-fonts.md) for installation details and limits.
+
 ## Dark Reader Mode
 
 Dark Reader Mode reverses the reader colors so text is shown light-on-dark.
