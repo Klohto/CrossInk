@@ -253,6 +253,22 @@ device model and build.
 
 #### 3.6.2 Reader
 
+**Global settings and individual books:** Choices under **Settings > Reader**
+are the defaults for your EPUB books. Layout choices such as font family, font
+size, and margins can be saved for one book from its **Reader Options** menu.
+A saved book choice takes precedence over the matching global setting; layout
+choices you have not changed for that book still follow the global defaults.
+For example, a book with its own font size can still pick up a later change to
+your global margins. **Dark Reader Mode** and **Stable Page Numbers** remain
+global even when changed from inside a book.
+
+If a global change does not affect one EPUB, find it in **Browse Files**, open
+its book actions, and choose **Reset Book Reader Settings**. This removes
+that book's saved reader choices so it follows the current global defaults
+again; it does not reset your other books or global settings. Older saved books
+may need this reset before they can inherit individual global changes. **Delete
+Book Cache** does not reset these choices.
+
 - **Reader Font Family**: Choose the font used for reading:
   - "Lexend Deca" (default)
   - "Bitter"
