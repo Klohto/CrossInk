@@ -20,6 +20,9 @@ namespace fui = freeink::ui;
 namespace {
 
 constexpr fui::ActionId ACTION_KEY = 1;
+constexpr int BUTTON_KEY_HEIGHT = 50;
+constexpr int BUTTON_KEY_ROW_GAP = 2;
+constexpr int SIDE_HINT_CLEARANCE = 6;
 
 // ---------------------------------------------------------------------------
 // URL layers. The SDK builtin layouts have no URL variant (":", "/", ".", the
@@ -516,9 +519,15 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
   const int pageWidth = renderer.getScreenWidth();
   const int pageHeight = renderer.getScreenHeight();
   const int rows = currentLayout().rowCount;
-  const int gap = metrics.keyboardKeySpacing;
-  const int height = rows * metrics.keyboardKeyHeight + (rows > 1 ? (rows - 1) * gap : 0);
-  const int width = pageWidth * metrics.keyboardWidthPercent / 100;
+  const bool buttonOnly = !mappedInput.hasTouchHardware();
+  const int rowGap = buttonOnly ? BUTTON_KEY_ROW_GAP : metrics.keyboardKeySpacing;
+  const int keyHeight = buttonOnly ? BUTTON_KEY_HEIGHT : metrics.keyboardKeyHeight;
+  const int height = rows * keyHeight + (rows > 1 ? (rows - 1) * rowGap : 0);
+  int width = pageWidth * metrics.keyboardWidthPercent / 100;
+  if (buttonOnly) {
+    // Side-button hints can sit beside either end of the keyboard, depending on the device.
+    width = std::min(width, pageWidth - 2 * (metrics.sideButtonHintsWidth + SIDE_HINT_CLEARANCE));
+  }
   const int x = (pageWidth - width) / 2;
   const int y =
       pageHeight - metrics.buttonHintsHeight - metrics.verticalSpacing - height + metrics.keyboardVerticalOffset;
@@ -985,7 +994,7 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   // table while this render builds the next generation.
   fui::GfxRendererTarget target(renderer);
   target.setFont(fui::GfxRendererTarget::FONT_SMALL, SMALL_FONT_ID);
-  target.setFont(fui::GfxRendererTarget::FONT_BODY, UI_12_FONT_ID);
+  target.setFont(fui::GfxRendererTarget::FONT_BODY, mappedInput.hasTouchHardware() ? UI_12_FONT_ID : UI_10_FONT_ID);
   const fui::DeviceContext device = target.deviceContext();
   const fui::InputSnapshot noInput{};
   interactions.beginPublishCycle();
@@ -1006,6 +1015,10 @@ void KeyboardEntryActivity::render(RenderLock&&) {
   props.labelText.font = fui::GfxRendererTarget::FONT_BODY;
   props.altText.font = fui::GfxRendererTarget::FONT_SMALL;
   props.gap = static_cast<int16_t>(metrics.keyboardKeySpacing);
+  if (!mappedInput.hasTouchHardware()) {
+    props.rowGap = BUTTON_KEY_ROW_GAP;
+    props.altLabelGap = 0;
+  }
   props.padding = fui::Insets{0, 0, 0, 0};
   // Fingers land low on the bottom row (occlusion) and there is no key below
   // to catch the miss — extend its hit band down to the button hints bar.
