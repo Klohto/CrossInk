@@ -14,7 +14,7 @@
 
 ### Fixed
 
-- Keyboard keys are shorter on button-only devices and leave room for the side-button hints.
+- Keyboard rows are shorter on button-only devices so side-button hints no longer cover the keys.
 - Saved clipping lists now show a scrollbar when more clippings are available below the visible rows.
 - EPUB Safe Mode no longer pins inherited fonts and page layout as personal book settings.
 - The X4 Pro Home button now steps back through dictionary lookup, chapter selection, and nested settings instead of jumping to Home.
