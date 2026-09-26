@@ -2,6 +2,7 @@
 
 ### Added
 
+- Hide finished books from the Library with a new Library Settings option.
 - View a selected book's reading stats from its Library or File Browser action menu.
 - Library replaces Recent Books with a searchable book list, title and author metadata, and sorting by date added, title, author last name, author first name, or recently opened.
 - Reset a book's reader settings from the in-reader Settings tab.
