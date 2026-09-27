@@ -266,6 +266,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     // raw values or they can silently change an existing binding's behavior.
     PREVIOUS_PAGE = 31,
     NEARBY_POSITION_SYNC = 32,
+    LIBRARY = 33,
     SHORT_PWRBTN_COUNT
   };
 
@@ -304,6 +305,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     CHORD_TOGGLE_TOUCHSCREEN = 28,
     CHORD_PREVIOUS_PAGE = 29,
     CHORD_NEARBY_POSITION_SYNC = 30,
+    CHORD_LIBRARY = 31,
     POWER_CHORD_ACTION_COUNT
   };
 
@@ -393,6 +395,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     // Appended: values are persisted in settings.bin.
     LONG_MENU_QUICK_ACTIONS = 22,
     LONG_MENU_QUICK_LOCK = 23,
+    LONG_MENU_LIBRARY = 24,
     LONG_PRESS_MENU_ACTION_COUNT
   };
 
