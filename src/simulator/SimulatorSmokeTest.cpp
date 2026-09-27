@@ -109,6 +109,8 @@ class SimulatorSmokeTest {
   const char* activeStepName = nullptr;
   std::vector<ScriptAction> inputScript;
   size_t scriptIndex = 0;
+  unsigned libraryRefreshPass = 0;
+  uint16_t libraryBaselineBooks = 0;
   SmokeStep inputCompletionStep = SmokeStep::Done;
 
   static bool enabled() { return std::getenv("CROSSINK_SIMULATOR_SMOKE_TEST") != nullptr; }
@@ -745,8 +747,33 @@ class SimulatorSmokeTest {
         const bool hasFixture = std::getenv("CROSSINK_SIMULATOR_SMOKE_BOOK") != nullptr;
         const bool readable = shelf.open(library::libraryIndexPath());
         const bool populated = readable && (!hasFixture || shelf.bookCount() > 0);
+        const uint16_t books = shelf.bookCount();
         shelf.close();
         if (!populated) fail("Library did not publish a readable populated index");
+        constexpr char REFRESH_FIXTURE[] = "/books/library-refresh-smoke.txt";
+        if (library::libraryIndexNeedsRefresh()) fail("Successful Library scan stayed dirty");
+        if (libraryRefreshPass == 0) {
+          libraryBaselineBooks = books;
+          // Deliberately bypass invalidation to prove that a normal return visit
+          // reuses the index instead of walking the card again.
+          if (!Storage.writeFile(REFRESH_FIXTURE, "Library refresh smoke fixture"))
+            fail("Cannot create Library fixture");
+        } else if (libraryRefreshPass == 1) {
+          if (books != libraryBaselineBooks) fail("Library rescanned an unchanged session");
+          library::invalidateLibraryIndex();
+        } else if (libraryRefreshPass == 2) {
+          if (books != libraryBaselineBooks + 1) fail("Library missed an invalidated addition");
+          if (!Storage.remove(REFRESH_FIXTURE)) fail("Cannot delete Library fixture");
+          library::invalidateLibraryIndex();
+        } else if (books != libraryBaselineBooks) {
+          fail("Library missed an invalidated deletion");
+        }
+        if (libraryRefreshPass++ < 3) {
+          activityManager.goToLibrary();
+          queueStep("Library cache reuse and invalidation", SmokeStep::Library);
+          break;
+        }
+        LOG_INF("SMOKE", "Library reuse, addition and deletion refresh passed");
         if (mappedInputManager.hasHomeKey()) {
           renderer.setOrientation(GfxRenderer::Orientation::LandscapeCounterClockwise);
         }
