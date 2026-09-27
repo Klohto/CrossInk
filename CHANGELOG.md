@@ -14,6 +14,7 @@
 - Text drawing resolves clipping and screen rotation once per glyph, reducing work when painting menus and book pages.
 - Library reuses its index on return visits and refreshes after file changes, instead of scanning the card every time.
 - Home reads saved EPUB progress and chapter metadata without opening or indexing the book, and stops saved-item checks after the first file.
+- Optional EPUB background work yields immediately when rendering is busy, keeping input polling responsive.
 
 ### Fixed
 
