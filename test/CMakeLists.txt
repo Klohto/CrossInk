@@ -101,3 +101,5 @@ add_subdirectory(library_builder)
 
 add_subdirectory(library_recent_order)
 add_subdirectory(scalable_fonts)
+
+add_subdirectory(glyph_bitmap)

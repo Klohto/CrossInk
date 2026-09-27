@@ -11,6 +11,7 @@
 ### Changed
 
 - Brightness and warmth gestures now respond while you drag, with longer swipes making larger adjustments.
+- Text drawing resolves clipping and screen rotation once per glyph, reducing work when painting menus and book pages.
 
 ### Fixed
 
