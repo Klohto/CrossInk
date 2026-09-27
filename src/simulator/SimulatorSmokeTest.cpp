@@ -2,6 +2,7 @@
 
 #include "SimulatorSmokeTest.h"
 
+#include <Epub.h>
 #include <HalStorage.h>
 #include <LibraryBuilder.h>
 #include <LibraryIndexFile.h>
@@ -25,9 +26,11 @@
 #include "CrossPointSettings.h"
 #include "DeviceCapabilities.h"
 #include "MappedInputManager.h"
+#include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
 #include "activities/ActivityManager.h"
+#include "activities/home/RecentBookProgress.h"
 #include "activities/reader/EpubReaderMenuActivity.h"
 #include "activities/reader/ReaderFontLoading.h"
 #include "activities/reader/ReaderOptionsActivity.h"
@@ -490,6 +493,26 @@ class SimulatorSmokeTest {
     LOG_INF("SMOKE", "Loading popup preserves backdrop in all orientations");
   }
 
+  static void verifyCachedHomeProgressMigration() {
+    const RecentBook book{"/books/legacy-home-smoke.epub", "Legacy Home smoke", {}, {}};
+    const std::string legacy = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(book.path));
+    const std::string current = Epub::cachePathForFilePath(book.path, "/.crosspoint");
+    if (legacy == current || Storage.exists(book.path.c_str())) fail("Invalid legacy Home fixture");
+    if (!Storage.mkdir(legacy.c_str())) fail("Cannot create legacy Home cache");
+    RecentBookProgress::saveCachedEpubPercent(legacy, 42.5f);
+    // There is deliberately no EPUB or book.bin. This must migrate and read the
+    // tiny saved percentage without attempting to open, parse or index a book.
+    if (RecentBookProgress::loadCachedEpubPercent(book) != 42.5f || Storage.exists(legacy.c_str()) ||
+        !Storage.exists(current.c_str()) || BookMetadataCache::exists(current))
+      fail("Home did not recover legacy cached progress without opening the EPUB");
+    if (!Storage.mkdir(legacy.c_str())) fail("Cannot recreate stale legacy Home cache");
+    RecentBookProgress::saveCachedEpubPercent(legacy, 90.0f);
+    if (RecentBookProgress::loadCachedEpubPercent(book) != 42.5f || !Storage.exists(legacy.c_str()))
+      fail("Stale legacy progress replaced the current Home cache");
+    if (!Storage.removeDir(legacy.c_str()) || !Storage.removeDir(current.c_str())) fail("Cannot remove Home fixtures");
+    LOG_INF("SMOKE", "Legacy Home progress migration without EPUB loading passed");
+  }
+
   void tickImpl() {
     mappedInputManager.simulatorClearInputFrame();
 
@@ -506,6 +529,7 @@ class SimulatorSmokeTest {
       case SmokeStep::Start:
         LOG_INF("SMOKE", "Starting simulator smoke test");
         verifyLoadingPopupBackdrop();
+        verifyCachedHomeProgressMigration();
         if (!CrossPointSettings::verifySleepTimeoutMigrationContract()) {
           fail("Sleep timeout migration contract failed");
         }
