@@ -31,7 +31,7 @@
 #include "SettingsList.h"
 #include "activities/ActivityManager.h"
 #include "activities/home/RecentBookProgress.h"
-#include "activities/reader/EpubReaderMenuActivity.h"
+#include "activities/reader/EpubReaderDrawerActivity.h"
 #include "activities/reader/ReaderFontLoading.h"
 #include "activities/reader/ReaderOptionsActivity.h"
 #include "activities/reader/ReaderUtils.h"
@@ -813,9 +813,9 @@ class SimulatorSmokeTest {
         break;
 
       case SmokeStep::ReaderOptions:
-        activityManager.replaceActivity(
-            std::make_unique<EpubReaderMenuActivity>(renderer, mappedInputManager, "Smoke Test", 1, 1, 0,
-                                                     SETTINGS.orientation, false, false, false, false, false, false));
+        activityManager.replaceActivity(std::make_unique<EpubReaderDrawerActivity>(
+            renderer, mappedInputManager, std::shared_ptr<Epub>{}, nullptr, 0.0f, false, false, false, false, false,
+            false, false, 0, 0, 5, false));
         queueStep("Reader Menu", SmokeStep::ReaderMenu);
         break;
 
@@ -965,7 +965,7 @@ class SimulatorSmokeTest {
         inputScript.push_back(touchMove(width / 2, height * 3 / 4));
         inputScript.push_back(touchRelease(width / 2, height * 3 / 4));
         inputScript.push_back(render("Reader Menu opened for TTF Native transition", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(touchDown(width / (static_cast<int>(READER_DRAWER_TAB_COUNT) * 2), tabY));
         inputScript.push_back(touchRelease(width / (static_cast<int>(READER_DRAWER_TAB_COUNT) * 2), tabY));
         addTap(MappedInputManager::Button::Confirm);
@@ -973,7 +973,7 @@ class SimulatorSmokeTest {
         addTap(MappedInputManager::Button::Down);
         addTap(MappedInputManager::Button::Confirm);
         inputScript.push_back(render("TTF Rendering opened in reader drawer", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         addTap(MappedInputManager::Button::Confirm);
         inputScript.push_back(render("TTF Hinting choices opened in reader drawer", 3));
         addTap(MappedInputManager::Button::Down);
@@ -983,7 +983,7 @@ class SimulatorSmokeTest {
         inputScript.push_back(touchDown(width / 2, tabY));
         inputScript.push_back(touchRelease(width / 2, tabY));
         inputScript.push_back(render("Reader Menu tab changed after TTF Native selection", 5));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         addTap(MappedInputManager::Button::Back);
         inputScript.push_back(render("Reader restored after TTF Native selection", 10));
         inputScript.push_back(assertActivity("EpubReader"));
@@ -1077,25 +1077,25 @@ class SimulatorSmokeTest {
         inputScript.push_back(assertActivity("EpubReader"));
         inputScript.push_back(homeLongPress());
         inputScript.push_back(render("Reader Menu opened from simulated Home key hold", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(touchDown(width / 2, height / 2 + 24));
         inputScript.push_back(touchRelease(width / 2, height / 2 + 24));
         inputScript.push_back(render("Reader Font opened from touch reader menu", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(homeTap());
         inputScript.push_back(render("Reader Menu root restored by simulated Home key tap", 8));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(homeTap());
         inputScript.push_back(render("Reader restored by simulated Home key tap at drawer root", 8));
         inputScript.push_back(assertActivity("EpubReader"));
         inputScript.push_back(homeLongPress());
         inputScript.push_back(render("Reader Menu reopened from simulated Home key hold", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(touchDown(width / 2, height * 3 / 4));
         inputScript.push_back(touchMove(width / 2, height - 8));
         inputScript.push_back(touchRelease(width / 2, height - 8));
         inputScript.push_back(render("Reader Menu remains open after in-drawer swipe down", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(touchDown(width / 2, height / 2 - 14));
         inputScript.push_back(touchMove(width / 2, height - 8));
         inputScript.push_back(touchRelease(width / 2, height - 8));
@@ -1104,7 +1104,7 @@ class SimulatorSmokeTest {
         inputScript.push_back(disableReaderTouch());
         inputScript.push_back(homeLongPress());
         inputScript.push_back(render("Reader Menu opened from Home key hold with touch disabled", 4));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
         inputScript.push_back(touchDown(width / 2, height / 4));
         inputScript.push_back(touchRelease(width / 2, height / 4));
         inputScript.push_back(render("Reader restored after Home key menu with touch disabled", 4));
@@ -1141,7 +1141,7 @@ class SimulatorSmokeTest {
         inputScript.push_back(touchRelease(width / 2, height * 3 / 4));
       }
       inputScript.push_back(render("Reader Menu opened from touch gesture", 4));
-      inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+      inputScript.push_back(assertActivity("EpubReaderDrawer"));
 
       // Touch every bottom-drawer tab slot, then dismiss from its handle.
       for (int tab = 0; tab < static_cast<int>(READER_DRAWER_TAB_COUNT); ++tab) {
@@ -1149,7 +1149,7 @@ class SimulatorSmokeTest {
         inputScript.push_back(touchDown(tabX, tabY));
         inputScript.push_back(touchRelease(tabX, tabY));
         inputScript.push_back(render("Touch Reader Menu tab", 3));
-        inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+        inputScript.push_back(assertActivity("EpubReaderDrawer"));
       }
 
       const int moreTabX = width / 2;
@@ -1162,14 +1162,14 @@ class SimulatorSmokeTest {
       inputScript.push_back(touchDown(width / 2, drawerTop + rootRowStep + rootRowCenterOffset));
       inputScript.push_back(touchRelease(width / 2, drawerTop + rootRowStep + rootRowCenterOffset));
       inputScript.push_back(render("Touch Reader Go to Percent pane", 4));
-      inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+      inputScript.push_back(assertActivity("EpubReaderDrawer"));
       inputScript.push_back(touchDown(20, drawerTop + 26));
       inputScript.push_back(touchRelease(20, drawerTop + 26));
       inputScript.push_back(render("Touch Reader More tab restored", 3));
       inputScript.push_back(touchDown(width / 2, drawerTop + rootRowStep * 2 + rootRowCenterOffset));
       inputScript.push_back(touchRelease(width / 2, drawerTop + rootRowStep * 2 + rootRowCenterOffset));
       inputScript.push_back(render("Touch Reader Auto Page Turn pane", 4));
-      inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+      inputScript.push_back(assertActivity("EpubReaderDrawer"));
       inputScript.push_back(touchDown(20, drawerTop + 26));
       inputScript.push_back(touchRelease(20, drawerTop + 26));
       inputScript.push_back(render("Touch Reader More tab restored", 3));
@@ -1177,7 +1177,7 @@ class SimulatorSmokeTest {
       inputScript.push_back(touchMove(width / 2, height - 8));
       inputScript.push_back(touchRelease(width / 2, height - 8));
       inputScript.push_back(render("Reader Menu remains open after in-drawer swipe down", 4));
-      inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+      inputScript.push_back(assertActivity("EpubReaderDrawer"));
       inputScript.push_back(touchDown(width / 2, drawerTop - 14));
       inputScript.push_back(touchRelease(width / 2, drawerTop - 14));
       inputScript.push_back(render("Reader restored after drawer handle tap", 4));
@@ -1187,12 +1187,12 @@ class SimulatorSmokeTest {
       inputScript.push_back(touchMove(width / 2, height * 3 / 4));
       inputScript.push_back(touchRelease(width / 2, height * 3 / 4));
       inputScript.push_back(render("Reader Menu reopened for bottom-edge Home gesture", 4));
-      inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+      inputScript.push_back(assertActivity("EpubReaderDrawer"));
       inputScript.push_back(touchDown(width / 2, height * 3 / 4));
       inputScript.push_back(touchMove(width / 2, height / 2 + 8));
       inputScript.push_back(touchRelease(width / 2, height / 2 + 8));
       inputScript.push_back(render("Reader Menu remains open after interior swipe up", 4));
-      inputScript.push_back(assertActivity("EpubReaderTouchMenu"));
+      inputScript.push_back(assertActivity("EpubReaderDrawer"));
       inputScript.push_back(touchDown(width / 2, height - 8));
       inputScript.push_back(touchMove(width / 2, height * 3 / 4));
       inputScript.push_back(touchRelease(width / 2, height * 3 / 4));
@@ -1210,19 +1210,25 @@ class SimulatorSmokeTest {
     inputScript.push_back(render("Reader Menu opened from EPUB", 4));
 
     addTap(MappedInputManager::Button::Down);
-    inputScript.push_back(render("Reader Menu Reader Options selection", 3));
+    inputScript.push_back(render("Reader Menu first row focused", 3));
 
     addTap(MappedInputManager::Button::Confirm);
-    inputScript.push_back(render("Reader Options opened from Reader Menu", 4));
+    inputScript.push_back(render("Reader Font opened from Reader Menu", 4));
 
     addTap(MappedInputManager::Button::Down);
-    inputScript.push_back(render("Reader Options after navigation", 3));
+    inputScript.push_back(render("Font Size selected", 3));
 
     addTap(MappedInputManager::Button::Confirm);
-    inputScript.push_back(render("Reader Options after toggle", 3));
+    inputScript.push_back(render("Font Size choices opened", 3));
 
     addTap(MappedInputManager::Button::Back);
-    inputScript.push_back(render("Reader Menu after closing Reader Options", 4));
+    inputScript.push_back(render("Reader Font after closing Font Size", 4));
+
+    addTap(MappedInputManager::Button::Back);
+    inputScript.push_back(render("Reader Menu tab focus restored", 4));
+
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("Reader Menu advanced to next tab", 4));
 
     addTap(MappedInputManager::Button::Back);
     inputScript.push_back(render("Reader after closing Reader Menu", 4));

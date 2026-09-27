@@ -10,11 +10,13 @@
 #include <cstring>
 #include <limits>
 
-class TouchReaderPreviewModel {
+template <size_t TextCapacity, size_t WordCapacity, size_t LineCapacity, bool KeepSourceBlocks>
+class ReaderPreviewModel {
  public:
-  static constexpr size_t TEXT_CAPACITY = 8U * 1024U;
-  static constexpr size_t WORD_CAPACITY = 256;
-  static constexpr size_t LINE_CAPACITY = 128;
+  static constexpr size_t TEXT_CAPACITY = TextCapacity;
+  static constexpr size_t WORD_CAPACITY = WordCapacity;
+  static constexpr size_t LINE_CAPACITY = LineCapacity;
+  static constexpr bool RETAINS_SOURCE_BLOCKS = KeepSourceBlocks;
 
   bool capture(const Page& page, const GfxRenderer& renderer, const int fontId, const uint8_t lineHeightPercent,
                const int xOffset = 0, const int yOffset = 0) {
@@ -47,7 +49,7 @@ class TouchReaderPreviewModel {
       Line& line = lines[lineCount++];
       line.x = pageLine.xPos;
       line.y = pageLine.yPos;
-      line.sourceBlock = block;
+      if constexpr (KeepSourceBlocks) line.sourceBlock = block;
       line.firstWord = wordCount;
       line.wordCount = block->wordCount();
       line.style = block->getBlockStyle();
@@ -160,9 +162,11 @@ class TouchReaderPreviewModel {
   // cppcheck-suppress constParameterReference
   void renderSource(GfxRenderer& renderer, const int fontId, const bool foregroundBlack) const {
     if (!valid()) return;
-    for (size_t i = 0; i < lineCount; ++i) {
-      const auto& line = lines[i];
-      line.sourceBlock->render(renderer, fontId, sourceXOffset + line.x, sourceYOffset + line.y, foregroundBlack);
+    if constexpr (KeepSourceBlocks) {
+      for (size_t i = 0; i < lineCount; ++i) {
+        const auto& line = lines[i];
+        line.sourceBlock->render(renderer, fontId, sourceXOffset + line.x, sourceYOffset + line.y, foregroundBlack);
+      }
     }
   }
 
@@ -523,7 +527,9 @@ class TouchReaderPreviewModel {
   }
 
   void clear() {
-    for (size_t i = 0; i < lineCount; ++i) lines[i].sourceBlock.reset();
+    if constexpr (KeepSourceBlocks) {
+      for (size_t i = 0; i < lineCount; ++i) lines[i].sourceBlock.reset();
+    }
     textSize = 0;
     wordCount = 0;
     lineCount = 0;
@@ -532,3 +538,12 @@ class TouchReaderPreviewModel {
     hasBaseline = false;
   }
 };
+
+using TouchReaderPreviewModel = ReaderPreviewModel<8U * 1024U, 256, 128, true>;
+using ButtonReaderPreviewModel = ReaderPreviewModel<4U * 1024U, 128, 32, false>;
+static_assert(sizeof(ButtonReaderPreviewModel) <= 12U * 1024U, "Button reader preview exceeds C3 budget");
+#if CROSSINK_APP_CAP_TOUCH
+using EpubReaderPreviewModel = TouchReaderPreviewModel;
+#else
+using EpubReaderPreviewModel = ButtonReaderPreviewModel;
+#endif

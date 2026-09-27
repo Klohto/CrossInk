@@ -17,6 +17,7 @@
 - Home reads saved EPUB progress and chapter metadata without opening or indexing the book, and stops saved-item checks after the first file.
 - Optional EPUB background work yields immediately when rendering is busy, keeping input polling responsive.
 - SD-card fonts share identical character lookup tables across styles, reducing memory use and repeated card reads.
+- EPUB reader menus now share five tabs across devices. Button devices gain live font and margin previews, Reading Stats, and in-book transfer options.
 
 ### Fixed
 
