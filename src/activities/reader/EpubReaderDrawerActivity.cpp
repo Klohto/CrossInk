@@ -459,7 +459,7 @@ void EpubReaderDrawerActivity::onEnter() {
   }
   paneRows.reserve(7);
   discoverDictionaries();
-  if (ownedPreviewModel) {
+  if (ownedPreviewModel && !CROSSINK_APP_READER_SAMPLE_PREVIEW) {
     const auto heap = MemoryBudget::snapshot();
     LOG_DBG("ERDM", "Button drawer ready: free=%u maxAlloc=%u", heap.freeHeap, heap.maxAllocHeap);
     if (!MemoryBudget::hasHeap(heap, MemoryBudget::EPUB_TEXT_LAYOUT_MIN_FREE,
@@ -833,6 +833,7 @@ void EpubReaderDrawerActivity::drawerScreen(UiApp::ScreenType& screen, void* use
 }
 
 int16_t EpubReaderDrawerActivity::drawerHeight() const {
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) return renderer.getScreenHeight();
   fui::SheetProps sheet;
   sheet.ruleWidth = DRAWER_RULE_WIDTH;
   const int16_t grabberBand = DrawerHandle::bandHeight(sheet);
@@ -858,9 +859,15 @@ int16_t EpubReaderDrawerActivity::drawerHeight() const {
 }
 
 fui::Rect EpubReaderDrawerActivity::previewBounds() const {
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) return samplePreviewBounds;
   const int16_t height = static_cast<int16_t>(renderer.getScreenHeight() - drawerHeight());
   const int16_t top = mappedInput.hasTouchHardware() ? 0 : drawerHeight();
   return fui::Rect{0, top, renderer.getScreenWidth(), height};
+}
+
+bool EpubReaderDrawerActivity::showsSamplePreview() const {
+  if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) return false;
+  return readerDrawerShowsSamplePreview(state.pane, state.tab, enumOptionRow);
 }
 
 void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
@@ -871,19 +878,46 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
   sheet.radius = 0;
   sheet.ruleWidth = DRAWER_RULE_WIDTH;
   const int16_t tabBarHeight = static_cast<int16_t>(TAB_BAR_HEIGHT + TAB_BAR_VERTICAL_PADDING * 2);
-  const fui::Rect sheetContent = screen.sheet(sheet, drawerHeight());
-  drawerHandleRect = DrawerHandle::registerTap(screen.frame(), sheetContent, sheet, ACTION_DISMISS);
-  if (buttonDevice) {
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+    screen.target().fill(screen.device().screen(), fui::Paint::solid(fui::Color::White));
     const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
-    screen.insetContent(fui::Insets{static_cast<int16_t>(safe.y),
-                                    static_cast<int16_t>(renderer.getScreenWidth() - safe.x - safe.width), 0,
-                                    static_cast<int16_t>(safe.x)});
+    screen.setContentMarginFromScreen(fui::Insets{
+        static_cast<int16_t>(safe.y), static_cast<int16_t>(renderer.getScreenWidth() - safe.x - safe.width),
+        static_cast<int16_t>(renderer.getScreenHeight() - safe.y - safe.height), static_cast<int16_t>(safe.x)});
+    drawerHandleRect = {};
+  } else {
+    const fui::Rect sheetContent = screen.sheet(sheet, drawerHeight());
+    drawerHandleRect = DrawerHandle::registerTap(screen.frame(), sheetContent, sheet, ACTION_DISMISS);
+    if (buttonDevice) {
+      const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+      screen.insetContent(fui::Insets{static_cast<int16_t>(safe.y),
+                                      static_cast<int16_t>(renderer.getScreenWidth() - safe.x - safe.width), 0,
+                                      static_cast<int16_t>(safe.x)});
+    }
   }
   // Give every tab row four pixels of white space above and below its icons.
   // The tab pill keeps its previous size so the selected background does not
   // become taller with the row.
   const fui::Rect tabs = buttonDevice ? screen.takeTop(tabBarHeight) : screen.takeBottom(tabBarHeight);
   buildTabBar(screen, tabs, buttonDevice);
+  samplePreviewBounds = {};
+  if (showsSamplePreview()) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    int previewHeight = screen.body().height * metrics.previewHeightPercent / 100;
+    if (readerDrawerSliderPreviewsText(state.pane)) {
+      // Leave both controls and both translated help lines usable in landscape.
+      ReaderSliderRowProps row;
+      row.label = row.value = row.minimumLabel = row.maximumLabel = " ";
+      row.captionGap = COMPACT_SLIDER_CAPTION_GAP;
+      const int controlsHeight =
+          screen.theme().headerHeight + 2 * readerSliderRowHeight(screen, row) +
+          2 * (screen.target().lineHeight(screen.theme().smallText.font) + screen.theme().spaceSm) +
+          screen.theme().spaceSm + sheet.ruleWidth + metrics.verticalSpacing;
+      previewHeight = std::min(previewHeight, std::max(0, screen.body().height - controlsHeight));
+    }
+    samplePreviewBounds =
+        screen.takeTop(static_cast<int16_t>(previewHeight), static_cast<int16_t>(metrics.verticalSpacing));
+  }
   screen.insetContent(fui::Insets{sheet.ruleWidth, DRAWER_SIDE_INSET, 0, DRAWER_SIDE_INSET});
 
   switch (state.pane) {
@@ -1357,7 +1391,7 @@ void EpubReaderDrawerActivity::buildFontFamilyPane(UiApp::ScreenType& screen) {
   const int top = std::clamp<int>(state.paneTopIndex, 0, std::max(0, total - visibleRows));
   state.paneTopIndex = static_cast<int16_t>(top);
   const int drawCount = std::min<int>({visibleRows, WINDOW_SIZE, total - top});
-  evenlySpaceDrawerListRows(props, listBounds, drawCount);
+  if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) evenlySpaceDrawerListRows(props, listBounds, drawCount);
   int selectedFontIndex = state.pendingFontIndex;
   if (selectedFontIndex < 0) {
     if (draft.sdFontFamilyName[0] != '\0') {
@@ -1402,8 +1436,9 @@ void EpubReaderDrawerActivity::buildEnumOptionsPane(UiApp::ScreenType& screen) {
   const int top = std::clamp<int>(state.paneTopIndex, 0, std::max(0, total - visibleRows));
   state.paneTopIndex = static_cast<int16_t>(top);
   const int drawCount = std::min<int>({visibleRows, WINDOW_SIZE, total - top});
-  if (enumOptionRow == RowId::FontSize || enumOptionRow == RowId::DictionaryFontFamily ||
-      enumOptionRow == RowId::DictionaryFontSize) {
+  if (!CROSSINK_APP_READER_SAMPLE_PREVIEW &&
+      (enumOptionRow == RowId::FontSize || enumOptionRow == RowId::DictionaryFontFamily ||
+       enumOptionRow == RowId::DictionaryFontSize)) {
     evenlySpaceDrawerListRows(props, listBounds, drawCount);
   }
   const int selectedIndex = previewedEnumOptionIndex >= 0 ? previewedEnumOptionIndex : enumOptionSelectedIndex;
@@ -2382,9 +2417,28 @@ void EpubReaderDrawerActivity::renderPreviewContents(const ReaderSettingsDraft& 
   const fui::Rect preview = previewBounds();
   renderer.fillRect(preview.x, preview.y, preview.width, preview.height, ReaderUtils::readerDarkModeEnabled());
   renderPreviewText(previewSettings, previewFontId);
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const char* name = previewSettings.sdFontFamilyName[0]
+                           ? previewSettings.sdFontFamilyName.data()
+                           : (previewSettings.fontFamily == 0 ? tr(STR_LEXEND_DECA) : tr(STR_BITTER));
+    char label[128];
+    std::snprintf(label, sizeof(label), "%s \"%s\", %upt", tr(STR_PREVIEW), name, previewSettings.readerFontPointSize);
+    renderer.beginTextClip(preview.x, preview.y, preview.width, preview.height);
+    renderer.drawText(UI_10_FONT_ID, preview.x + metrics.previewPadding,
+                      preview.bottom() - metrics.previewPadding - renderer.getTextHeight(UI_10_FONT_ID), label,
+                      ReaderUtils::readerForegroundBlack());
+    renderer.endTextClip();
+    renderer.drawLine(preview.x, preview.bottom() - 1, preview.right() - 1, preview.bottom() - 1,
+                      ReaderUtils::readerForegroundBlack());
+  }
 }
 
 void EpubReaderDrawerActivity::renderPreviewText(const ReaderSettingsDraft& previewSettings, const int previewFontId) {
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+    renderSamplePreviewText(previewSettings, previewFontId);
+    return;
+  }
   const fui::Rect preview = previewBounds();
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, !mappedInput.hasTouchHardware(), false);
   const int clipTop = std::max<int>(preview.y, safe.y);
@@ -2426,17 +2480,40 @@ void EpubReaderDrawerActivity::renderPreviewText(const ReaderSettingsDraft& prev
   renderer.endTextClip();
 }
 
+void EpubReaderDrawerActivity::renderSamplePreviewText(const ReaderSettingsDraft& settings, const int fontId) {
+  if (!previewModel || !previewModel->valid()) return;
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const fui::Rect area = previewBounds();
+  const int labelHeight = renderer.getTextHeight(UI_10_FONT_ID) + metrics.previewPadding + 4;
+  const int textHeight = std::max(0, area.height - labelHeight - metrics.previewPadding);
+  // The sample is a short page: show top AND bottom margins proportionally
+  // to its height, while horizontal margins and font sizes remain actual pixels.
+  const int marginY =
+      settings.screenMarginVertical * textHeight / std::max(1, static_cast<int>(renderer.getScreenHeight()));
+  const int marginX = settings.screenMarginHorizontal;
+  const int top = area.y + metrics.previewPadding + marginY;
+  const int width = std::max(1, area.width - marginX * 2);
+  renderer.beginTextClip(area.x + marginX, top, width, std::max(0, textHeight - marginY * 2));
+  previewModel->renderText(renderer, fontId, area.x + marginX, top, width, settings.lineHeightPercent,
+                           settings.wordSpacing, settings.paragraphAlignment, settings.focusReadingEnabled,
+                           settings.guideReadingEnabled, ReaderUtils::readerForegroundBlack(),
+                           top + std::max(0, textHeight - marginY * 2));
+  renderer.endTextClip();
+}
+
+void EpubReaderDrawerActivity::renderPreviewUnavailable() {
+  const fui::Rect preview = previewBounds();
+  renderer.fillRect(preview.x, preview.y, preview.width, preview.height, ReaderUtils::readerDarkModeEnabled());
+  renderer.drawCenteredText(UI_12_FONT_ID, preview.y + preview.height / 2, tr(STR_PREVIEW_UNAVAILABLE),
+                            ReaderUtils::readerForegroundBlack());
+}
+
 bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
   previewFontId = -1;
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW && !showsSamplePreview()) return false;
   if (!previewDirty) return false;
   previewDirty = false;
-  const auto showUnavailable = [this] {
-    const fui::Rect preview = previewBounds();
-    renderer.fillRect(preview.x, preview.y, preview.width, preview.height, ReaderUtils::readerDarkModeEnabled());
-    renderer.drawCenteredText(UI_12_FONT_ID, preview.y + preview.height / 2, tr(STR_PREVIEW_UNAVAILABLE),
-                              ReaderUtils::readerForegroundBlack());
-  };
-  const auto releasePreviewIfBelowReserve = [this, &showUnavailable, &previewFontId] {
+  const auto releasePreviewIfBelowReserve = [this, &previewFontId] {
     if (!ownedPreviewModel) return false;
     const auto heap = MemoryBudget::snapshot();
     if (MemoryBudget::hasHeap(heap, MemoryBudget::EPUB_TEXT_LAYOUT_MIN_FREE,
@@ -2445,16 +2522,18 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
     LOG_ERR("ERDM", "Button preview exhausted EPUB layout reserve: free=%u maxAlloc=%u", heap.freeHeap,
             heap.maxAllocHeap);
     restoreReaderDraftFont(draft, lastGoodPreviewSettings);
-    ownedPreviewModel.reset();
-    previewModel = nullptr;
+    if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+      ownedPreviewModel.reset();
+      previewModel = nullptr;
+    }
     previewUnavailable = true;
     previewFontId = -1;
-    showUnavailable();
+    renderPreviewUnavailable();
     return true;
   };
   if (!previewModel || !previewModel->valid()) {
     if (previewUnavailable) {
-      showUnavailable();
+      renderPreviewUnavailable();
       return false;
     }
     if (!previewFontMetricsChanged) return false;
@@ -2462,6 +2541,7 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
     renderer.fillRect(preview.x, preview.y, preview.width, preview.height, ReaderUtils::readerDarkModeEnabled());
     return true;
   }
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW && releasePreviewIfBelowReserve()) return false;
   if (fontPreviewLoading) {
     GUI.drawPopup(renderer, tr(STR_LOADING_POPUP), true);
     fontPreviewLoading = false;
@@ -2478,11 +2558,13 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
   if (!fontLoaded && ownedPreviewModel) {
     LOG_ERR("ERDM", "Could not load selected SD font for button preview");
     restoreReaderDraftFont(draft, lastGoodPreviewSettings);
-    ownedPreviewModel.reset();
-    previewModel = nullptr;
+    if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+      ownedPreviewModel.reset();
+      previewModel = nullptr;
+    }
     previewUnavailable = true;
     previewFontId = -1;
-    showUnavailable();
+    renderPreviewUnavailable();
     return false;
   }
   if (auto* fontCacheManager = renderer.getFontCacheManager()) {
@@ -2492,11 +2574,13 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
     if (!scope.endScanAndPrewarm() && ownedPreviewModel) {
       LOG_ERR("ERDM", "Could not prewarm selected font for button preview");
       restoreReaderDraftFont(draft, lastGoodPreviewSettings);
-      ownedPreviewModel.reset();
-      previewModel = nullptr;
+      if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+        ownedPreviewModel.reset();
+        previewModel = nullptr;
+      }
       previewUnavailable = true;
       previewFontId = -1;
-      showUnavailable();
+      renderPreviewUnavailable();
       return false;
     }
     if (releasePreviewIfBelowReserve()) return false;
@@ -2504,6 +2588,7 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
   renderPreviewContents(previewSettings, previewFontId);
   if (releasePreviewIfBelowReserve()) return false;
   lastGoodPreviewSettings = draft;
+  previewUnavailable = false;
   return true;
 }
 
@@ -2733,10 +2818,22 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   }
   previousDrawerEdge = drawerEdge;
   int previewFontId = -1;
-  const bool previewRendered = renderPreview(previewFontId);
+  bool previewRendered = !CROSSINK_APP_READER_SAMPLE_PREVIEW && renderPreview(previewFontId);
   uiReady = false;
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW && fontPreviewLoading) {
+    GUI.drawPopup(renderer, tr(STR_LOADING_POPUP), true);
+    fontPreviewLoading = false;
+  }
   app.setDevice(uiTarget.deviceContext());
   app.render();
+  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
+    previewDirty = true;  // The full-screen UI cleared the sample area as well.
+    previewRendered = renderPreview(previewFontId);
+    if (showsSamplePreview() && previewUnavailable) {
+      app.render();  // A failed font selection rolled the draft back; repaint its values too.
+      renderPreviewUnavailable();
+    }
+  }
   uiReady = true;
   if (!mappedInput.hasTouchHardware()) {
     const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);

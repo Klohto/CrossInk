@@ -2537,8 +2537,16 @@ void EpubReaderActivity::openReaderMenu() {
   pauseReadingPaceTimer("reader_menu");
   const BookReaderSettingsData bookSettings = loadBookReaderSettingsFile(epub->getCachePath());
   std::unique_ptr<EpubReaderPreviewModel> buttonPreviewModel;
-#if !CROSSINK_APP_CAP_TOUCH
-  // The normal reader has no resident preview on C3. Borrow one serialized
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+  // Owned for the menu lifetime: too large for the task stack, but under 3 KiB
+  // instead of a captured book page plus its larger preview model.
+  buttonPreviewModel = makeUniqueNoThrow<EpubReaderPreviewModel>();
+  if (!buttonPreviewModel || !buttonPreviewModel->captureParagraph(READER_PREVIEW_PARAGRAPH)) {
+    LOG_ERR("ERDM", "Could not prepare sample reader preview");
+    buttonPreviewModel.reset();
+  }
+#elif !CROSSINK_APP_CAP_TOUCH
+  // Button-only S3 readers have no resident preview. Borrow one serialized
   // page only while opening the menu, then release it before allocating the
   // drawer. Keep enough internal heap for the next EPUB layout operation.
   if (!previewActive && section &&

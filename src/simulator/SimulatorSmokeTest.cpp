@@ -1221,14 +1221,66 @@ class SimulatorSmokeTest {
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Font Size choices opened", 3));
 
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("C3 font size paragraph preview", 4));
+#endif
+
     addTap(MappedInputManager::Button::Back);
     inputScript.push_back(render("Reader Font after closing Font Size", 4));
+
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("C3 font family picker", 4));
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("C3 font family paragraph preview", 4));
+    addTap(MappedInputManager::Button::Back);
+    inputScript.push_back(render("C3 reader font restored", 3));
+#endif
 
     addTap(MappedInputManager::Button::Back);
     inputScript.push_back(render("Reader Menu tab focus restored", 4));
 
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("C3 spacing paragraph preview", 4));
+    addTap(MappedInputManager::Button::Confirm);
+    addTap(MappedInputManager::Button::Down);
+    inputScript.push_back(render("C3 line spacing adjusted", 4));
+    addTap(MappedInputManager::Button::Back);
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Confirm);
+    addTap(MappedInputManager::Button::Down);
+    inputScript.push_back(render("C3 word spacing adjusted", 4));
+    addTap(MappedInputManager::Button::Back);
+    addTap(MappedInputManager::Button::Back);
+    inputScript.push_back(render("C3 font tab restored", 3));
+#endif
+
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Reader Menu advanced to next tab", 4));
+
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("C3 margin paragraph preview", 4));
+    addTap(MappedInputManager::Button::Confirm);
+    addTap(MappedInputManager::Button::Down);
+    inputScript.push_back(render("C3 vertical margin adjusted", 4));
+    addTap(MappedInputManager::Button::Back);
+    addTap(MappedInputManager::Button::Down);
+    addTap(MappedInputManager::Button::Confirm);
+    addTap(MappedInputManager::Button::Down);
+    inputScript.push_back(render("C3 horizontal margin adjusted", 4));
+    addTap(MappedInputManager::Button::Back);
+    addTap(MappedInputManager::Button::Back);
+    inputScript.push_back(render("C3 layout tab restored", 3));
+#endif
 
     addTap(MappedInputManager::Button::Back);
     inputScript.push_back(render("Reader after closing Reader Menu", 4));

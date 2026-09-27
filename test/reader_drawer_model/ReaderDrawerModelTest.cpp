@@ -292,3 +292,19 @@ TEST(PendingOverlayResume, ConsumptionIsOneShot) {
   PendingOverlayResume second;
   EXPECT_FALSE(consumePendingOverlayResumeOnce(stored, second));
 }
+
+TEST(ReaderDrawerModel, SamplePreviewCoversLiveTextSettingsOnly) {
+  using Pane = ReaderDrawerPane;
+  using Tab = ReaderDrawerTab;
+  using Row = ReaderDrawerCatalogItem;
+  EXPECT_TRUE(readerDrawerShowsSamplePreview(Pane::Root, Tab::Font, Row::FontSize));
+  for (const auto pane : {Pane::ReaderFont, Pane::FontFamily, Pane::Spacing, Pane::Margins})
+    EXPECT_TRUE(readerDrawerShowsSamplePreview(pane, Tab::Layout, Row::FontSize));
+  for (const auto row : {Row::FontSize, Row::Alignment})
+    EXPECT_TRUE(readerDrawerShowsSamplePreview(Pane::EnumOptions, Tab::Layout, row));
+  for (const auto tab : {Tab::Layout, Tab::More, Tab::Location, Tab::Settings})
+    EXPECT_FALSE(readerDrawerShowsSamplePreview(Pane::Root, tab, Row::FontSize));
+  for (const auto row : {Row::Orientation, Row::DictionaryFontFamily, Row::DictionaryFontSize, Row::Images})
+    EXPECT_FALSE(readerDrawerShowsSamplePreview(Pane::EnumOptions, Tab::Layout, row));
+  EXPECT_FALSE(readerDrawerShowsSamplePreview(Pane::DictionaryFont, Tab::Font, Row::FontSize));
+}

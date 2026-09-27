@@ -1,5 +1,6 @@
 #pragma once
 
+#include <AppCapabilities.h>
 #include <Epub/Page.h>
 #include <GfxRenderer.h>
 #include <Utf8.h>
@@ -108,10 +109,41 @@ class ReaderPreviewModel {
     return hasBaseline && wordCount > 0;
   }
 
+  // Plain sample text needs no Page, TextBlock ownership, or source geometry.
+  // Split once into the model's bounded storage; rendering reuses its metrics.
+  bool captureParagraph(const char* paragraph) {
+    clear();
+    if (!paragraph || std::strlen(paragraph) >= text.size()) return false;
+    std::strcpy(text.data(), paragraph);
+    char* cursor = text.data();
+    while (*cursor) {
+      while (*cursor == ' ') ++cursor;
+      if (!*cursor) break;
+      if (wordCount == words.size()) {
+        clear();
+        return false;
+      }
+      Word& word = words[wordCount];
+      word = {};
+      word.textOffset = static_cast<uint16_t>(cursor - text.data());
+      word.hasSpaceBefore = wordCount > 0;
+      word.mayBreakBefore = wordCount > 0;
+      ++wordCount;
+      while (*cursor && *cursor != ' ') ++cursor;
+      if (*cursor) *cursor++ = '\0';
+    }
+    if (wordCount == 0) return false;
+    lines[0] = {};
+    lines[0].wordCount = wordCount;
+    lineCount = 1;
+    hasBaseline = true;
+    return true;
+  }
+
   void renderText(const GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset,
                   const int contentWidth, const uint8_t lineHeightPercent, const uint8_t wordSpacing,
                   const uint8_t paragraphAlignment, const bool focusReadingEnabled, const bool guideReadingEnabled,
-                  const bool foregroundBlack) const {
+                  const bool foregroundBlack, const int bottom = std::numeric_limits<int>::max()) const {
     if (!valid()) return;
     const int currentLineHeight = std::max(1, (renderer.getLineHeight(fontId) * lineHeightPercent + 50) / 100);
     int y = firstLineY + yOffset;
@@ -137,6 +169,7 @@ class ReaderPreviewModel {
                      guideReadingEnabled);
       prepareLineBreaks(firstWord, paragraphWordEnd, availableWidth, previewFirstLineIndent(line, alignment));
       while (wordIndex < paragraphWordEnd) {
+        if (bottom != std::numeric_limits<int>::max() && y + renderer.getTextHeight(fontId) > bottom) return;
         const int firstLineIndent = firstPreviewLine ? previewFirstLineIndent(line, alignment) : 0;
         const uint16_t lineEnd = nextBreak[wordIndex];
         renderReflowedLine(renderer, fontId, wordIndex, lineEnd, y, availableLeft, availableWidth, firstLineIndent,
@@ -539,10 +572,21 @@ class ReaderPreviewModel {
   }
 };
 
+// Deliberately fixed Latin sample: font/layout test content, not a UI label.
+inline constexpr char READER_PREVIEW_PARAGRAPH[] =
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore "
+    "magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo "
+    "consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. "
+    "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+using SampleReaderPreviewModel = ReaderPreviewModel<sizeof(READER_PREVIEW_PARAGRAPH), 80, 1, false>;
+static_assert(sizeof(SampleReaderPreviewModel) <= 3U * 1024U, "Sample preview exceeds its C3 budget");
+
 using TouchReaderPreviewModel = ReaderPreviewModel<8U * 1024U, 256, 128, true>;
 using ButtonReaderPreviewModel = ReaderPreviewModel<4U * 1024U, 128, 32, false>;
 static_assert(sizeof(ButtonReaderPreviewModel) <= 12U * 1024U, "Button reader preview exceeds C3 budget");
-#if CROSSINK_APP_CAP_TOUCH
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+using EpubReaderPreviewModel = SampleReaderPreviewModel;
+#elif CROSSINK_APP_CAP_TOUCH
 using EpubReaderPreviewModel = TouchReaderPreviewModel;
 #else
 using EpubReaderPreviewModel = ButtonReaderPreviewModel;

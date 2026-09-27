@@ -51,8 +51,12 @@ class EpubReaderDrawerActivity final : public Activity {
   // A dirty preview can rebuild the page area itself; after a TTF ID change,
   // an unavailable text snapshot is replaced with a safe blank background.
   bool requiresFreshBackdrop() const override {
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+    return false;  // The full-screen menu paints every pixel itself.
+#else
     return readerDrawerNeedsExternalBackdrop(previewDirty, previewModel && previewModel->valid(),
                                              previewFontMetricsChanged);
+#endif
   }
   bool allowPowerAsConfirmInReaderMode() const override { return true; }
   bool allowGlobalHomeGesture() const override { return true; }
@@ -80,10 +84,11 @@ class EpubReaderDrawerActivity final : public Activity {
 
   std::shared_ptr<Epub> epub;
   const EpubReaderPreviewModel* previewModel = nullptr;
-  // C3 owns a bounded snapshot only while the drawer is open. Touch readers
-  // continue to pass their resident snapshot through previewModel.
+  // Button devices own their preview only while the menu is open. C3 uses a
+  // small sample paragraph; S3 retains its current-page preview.
   std::unique_ptr<EpubReaderPreviewModel> ownedPreviewModel;
   bool previewUnavailable = false;
+  freeink::ui::Rect samplePreviewBounds{};
   // Centipercent (0-10000, hundredths of a percent) so the keypad can type a decimal
   // destination; 1.00% is 100 here.
   int percent = 0;
@@ -181,6 +186,9 @@ class EpubReaderDrawerActivity final : public Activity {
   static void onKeypadBackspaceEvent(const freeink::ui::ActionEvent& event, void* user);
 
   void buildDrawer(UiApp::ScreenType& screen);
+  bool showsSamplePreview() const;
+  void renderPreviewUnavailable();
+  void renderSamplePreviewText(const ReaderSettingsDraft& settings, int fontId);
   void buildTabBar(UiApp::ScreenType& screen, freeink::ui::Rect rect, bool drawBottomRule);
   void buildPaneHeader(UiApp::ScreenType& screen);
   void buildRootRows(UiApp::ScreenType& screen);

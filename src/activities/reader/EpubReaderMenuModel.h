@@ -237,6 +237,16 @@ constexpr bool readerDrawerStepChangesSettings(const ReaderDrawerPane pane) {
          pane == ReaderDrawerPane::AutoPageTurn;
 }
 
+// Only settings with an existing live text preview reserve sample space.
+constexpr bool readerDrawerShowsSamplePreview(const ReaderDrawerPane pane, const ReaderDrawerTab tab,
+                                              const ReaderDrawerCatalogItem option) {
+  return (pane == ReaderDrawerPane::Root && tab == ReaderDrawerTab::Font) || pane == ReaderDrawerPane::ReaderFont ||
+         pane == ReaderDrawerPane::FontFamily || pane == ReaderDrawerPane::Spacing ||
+         pane == ReaderDrawerPane::Margins ||
+         (pane == ReaderDrawerPane::EnumOptions &&
+          (option == ReaderDrawerCatalogItem::FontSize || option == ReaderDrawerCatalogItem::Alignment));
+}
+
 constexpr bool readerDrawerSliderPreviewsText(const ReaderDrawerPane pane) {
   return pane == ReaderDrawerPane::Spacing || pane == ReaderDrawerPane::Margins;
 }
