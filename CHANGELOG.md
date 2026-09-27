@@ -18,6 +18,7 @@
 - Optional EPUB background work yields immediately when rendering is busy, keeping input polling responsive.
 - SD-card fonts share identical character lookup tables across styles, reducing memory use and repeated card reads.
 - EPUB reader menus now share five tabs across devices. Button devices gain live font and margin previews, Reading Stats, and in-book transfer options.
+- Brightness and warmth gestures now adjust in one-point steps for finer control.
 
 ### Fixed
 
