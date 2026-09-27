@@ -2,6 +2,7 @@
 
 ### Added
 
+- Customize the top and bottom reader status bars separately, including item positions and progress bars, in EPUB, TXT, and XTC books. Each bar can be previewed where it appears while reading.
 - View a selected book's reading stats from its Library or File Browser action menu.
 - Library replaces Recent Books with a searchable book list, and adds various book metadata sort options.
 - Reset a book's reader settings from the in-reader Settings tab.
@@ -73,7 +74,7 @@
 - EPUB dictionary lookup can select an individual part of a hyphenated word.
 - Short Power-button frontlight and touchscreen shortcuts in EPUB books no longer run the configured long-press action.
 - Silent restarts now preserve the frontlight state instead of applying wake or schedule settings.
-- The Home button now returns from Customize Status Bar to the previous menu instead of leaving the reader.
+- The Home button now returns from Status Bars to the previous menu instead of leaving the reader.
 - OPDS book downloads can follow secure redirects without sharing catalog credentials with the download host.
 - Larger EPUB stylesheets work on PSRAM readers, including rules that hide duplicate images.
 - JPEG-heavy EPUBs can use PSRAM for decoding on supported readers, leaving internal memory available for reading.

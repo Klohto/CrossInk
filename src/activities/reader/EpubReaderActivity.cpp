@@ -966,10 +966,10 @@ ReaderViewportLayout computeReaderViewportLayout(GfxRenderer& renderer, const bo
   layout.marginLeft += effectiveReaderLeftMargin();
   layout.marginRight += SETTINGS.screenMarginHorizontal;
 
-  const int topStatusBarReservedHeight = ReaderUtils::getTopClockStatusBarReservedHeight(renderer);
+  const int topStatusBarReservedHeight = ReaderUtils::getTopStatusBarReservedHeight(renderer);
   if (topStatusBarReservedHeight > 0) {
     layout.marginTop += std::max(static_cast<int>(SETTINGS.screenMarginVertical),
-                                 topStatusBarReservedHeight + ReaderUtils::TOP_CLOCK_TEXT_PADDING);
+                                 topStatusBarReservedHeight + ReaderUtils::TOP_STATUS_BAR_TEXT_PADDING);
   } else {
     layout.marginTop += SETTINGS.screenMarginVertical;
   }
@@ -1845,12 +1845,10 @@ bool EpubReaderActivity::estimateTimeLeftSeconds(const bool bookEstimate, uint32
   return seconds > 0;
 }
 
-bool EpubReaderActivity::formatTimeLeftLabel(char* buf, const size_t len) const {
-  if (!buf || len == 0 || SETTINGS.statusBarTimeLeft == CrossPointSettings::STATUS_BAR_TIME_LEFT::TIME_LEFT_HIDE) {
+bool EpubReaderActivity::formatTimeLeftLabel(char* buf, const size_t len, const bool bookEstimate) const {
+  if (!buf || len == 0) {
     return false;
   }
-
-  const bool bookEstimate = SETTINGS.statusBarTimeLeft == CrossPointSettings::STATUS_BAR_TIME_LEFT::TIME_LEFT_BOOK;
   uint32_t seconds = 0;
   if (estimateTimeLeftSeconds(bookEstimate, seconds)) {
     formatCompactReadingDuration(seconds, buf, len);
@@ -2196,34 +2194,41 @@ bool EpubReaderActivity::beginGlobalSettingsEdit() {
 }
 
 void EpubReaderActivity::endGlobalSettingsEdit() {
-  if (!bookReaderSettingsSuspendedForGlobalEdit) {
-    return;
+  if (bookReaderSettingsSuspendedForGlobalEdit) {
+    // Global Settings is editing SETTINGS while the book-specific reader values
+    // are suspended. Retain every edited reader default before restoring this
+    // book, otherwise the stale snapshot is written back on a later save or
+    // when the reader exits.
+    captureReaderSettings(globalReaderSettingsBeforeBook);
+    // Only fields this book actually owns need the pre-edit snapshot restored,
+    // so its own look survives an unrelated global edit. A book that just
+    // inherits the global font has nothing of its own to protect there, and
+    // restoring the whole snapshot would revert the edit the user just made
+    // for the rest of this reading session. Render mode is tracked separately
+    // (a build fallback can set it without hasCustomReaderSettings), so it is
+    // restored on its own whenever this book owns it.
+    ReaderSettingsSnapshot effectiveSettings = globalReaderSettingsBeforeBook;
+    applyReaderSettingsOverrides(effectiveSettings, suspendedBookReaderSettings,
+                                 initialBookReaderSettings.readerSettingsOverrideMask);
+    applyReaderSettings(effectiveSettings);
+    if (initialBookReaderSettings.hasSafeModeOverride) {
+      applySafeModeReaderSettings();
+    }
+    if (bookHasRenderModeOverride) {
+      SETTINGS.epubRenderMode = normalizeRenderModeRaw(suspendedBookReaderSettings.epubRenderMode);
+    }
+    captureReaderSettings(initialBookReaderSettings.readerSettings);
+    bookReaderSettingsSuspendedForGlobalEdit = false;
   }
-
-  // Global Settings is editing SETTINGS while the book-specific reader values
-  // are suspended. Retain every edited reader default before restoring this
-  // book, otherwise the stale snapshot is written back on a later save or
-  // when the reader exits.
-  captureReaderSettings(globalReaderSettingsBeforeBook);
-  // Only fields this book actually owns need the pre-edit snapshot restored,
-  // so its own look survives an unrelated global edit. A book that just
-  // inherits the global font has nothing of its own to protect there, and
-  // restoring the whole snapshot would revert the edit the user just made
-  // for the rest of this reading session. Render mode is tracked separately
-  // (a build fallback can set it without hasCustomReaderSettings), so it is
-  // restored on its own whenever this book owns it.
-  ReaderSettingsSnapshot effectiveSettings = globalReaderSettingsBeforeBook;
-  applyReaderSettingsOverrides(effectiveSettings, suspendedBookReaderSettings,
-                               initialBookReaderSettings.readerSettingsOverrideMask);
-  applyReaderSettings(effectiveSettings);
-  if (initialBookReaderSettings.hasSafeModeOverride) {
-    applySafeModeReaderSettings();
+  // Bar edits change the reading viewport even when the book's font settings do not.
+  // Rebuild the active section immediately so it cannot keep pages laid out for
+  // the previous top/bottom reservations.
+  const ReaderViewportLayout layout = computeReaderViewportLayout(renderer, automaticPageTurnActive);
+  if (section && (layout.viewportWidth != buildViewportWidth || layout.viewportHeight != buildViewportHeight)) {
+    RenderLock lock(*this);
+    prepareCurrentSectionForRelayout();
+    section.reset();
   }
-  if (bookHasRenderModeOverride) {
-    SETTINGS.epubRenderMode = normalizeRenderModeRaw(suspendedBookReaderSettings.epubRenderMode);
-  }
-  captureReaderSettings(initialBookReaderSettings.readerSettings);
-  bookReaderSettingsSuspendedForGlobalEdit = false;
 }
 
 void EpubReaderActivity::saveReaderOptionsForBook(void* ctx) {
@@ -2544,10 +2549,13 @@ void EpubReaderActivity::openReaderMenu() {
         !previewActive && epub && Dictionary::exists(epub->getCachePath().c_str()), !BOOKMARKS.getBookmarks().empty(),
         CLIPPINGS.hasClippings(),
         !previewActive && BOOKMARKS.hasBookmarkForPage(bmSpine, bmProgress, bookmarkPageCount), isBookCompleted,
-        SETTINGS.statusBarTimeLeft != CrossPointSettings::STATUS_BAR_TIME_LEFT::TIME_LEFT_HIDE, stableCurrentPage,
-        stablePageCount, getAutoPageTurnIntervalSeconds(), automaticPageTurnActive, saveReaderOptionsForBook, this,
-        saveGlobalSettingsForBookReader, this, beginGlobalSettingsEditForBookReader, this,
-        endGlobalSettingsEditForBookReader, this, bookSettings.dictionarySdFontFamilyName,
+        (SETTINGS.topReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftBook) ||
+         SETTINGS.topReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftChapter) ||
+         SETTINGS.bottomReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftBook) ||
+         SETTINGS.bottomReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftChapter)),
+        stableCurrentPage, stablePageCount, getAutoPageTurnIntervalSeconds(), automaticPageTurnActive,
+        saveReaderOptionsForBook, this, saveGlobalSettingsForBookReader, this, beginGlobalSettingsEditForBookReader,
+        this, endGlobalSettingsEditForBookReader, this, bookSettings.dictionarySdFontFamilyName,
         bookSettings.dictionaryFontPointSize, bookSettings.hasDictionaryFontOverride, saveDictionaryFontForBookReader,
         this, touchReaderDrawerState);
     if (!menuActivity) {
@@ -2566,7 +2574,10 @@ void EpubReaderActivity::openReaderMenu() {
         CLIPPINGS.hasClippings(),
         !previewActive && BOOKMARKS.hasBookmarkForPage(bmSpine, bmProgress, bookmarkPageCount), isBookCompleted,
         automaticPageTurnActive, getAutoPageTurnIntervalSeconds(),
-        SETTINGS.statusBarTimeLeft != CrossPointSettings::STATUS_BAR_TIME_LEFT::TIME_LEFT_HIDE,
+        (SETTINGS.topReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftBook) ||
+         SETTINGS.topReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftChapter) ||
+         SETTINGS.bottomReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftBook) ||
+         SETTINGS.bottomReaderStatusBar.contains(ReaderStatusBarItem::TimeLeftChapter)),
         saveReaderOptionsForBook, this, saveGlobalSettingsForBookReader, this, beginGlobalSettingsEditForBookReader,
         this, stableCurrentPage, stablePageCount, endGlobalSettingsEditForBookReader, this,
         bookSettings.dictionarySdFontFamilyName, bookSettings.dictionaryFontPointSize,
@@ -2783,8 +2794,14 @@ void EpubReaderActivity::loop() {
 #endif
 
   const auto touch = ReaderUtils::detectTouchPageTurn(renderer, mappedInput);
-  if (touch.tapped &&
-      ReaderUtils::isBottomStatusBarTap(renderer, touch.y, UITheme::getInstance().getStatusBarHeight())) {
+  const int bottomTapHeight =
+      automaticPageTurnActive
+          ? std::max(UITheme::getStatusBarHeight(),
+                     UITheme::getProgressBarHeight() + UITheme::getInstance().getMetrics().statusBarVerticalMargin)
+          : UITheme::getStatusBarHeight();
+  if (touch.tapped && (ReaderUtils::isBottomStatusBarTap(renderer, touch.y, bottomTapHeight) ||
+                       ReaderUtils::isTopStatusBarTap(
+                           renderer, touch.y, UITheme::getReaderStatusBarHeight(ReaderStatusBarPosition::Top)))) {
     if (SETTINGS.tapToHideStatusBar) {
       statusBarVisible = !statusBarVisible;
       requestUpdate();
@@ -5587,9 +5604,8 @@ void EpubReaderActivity::setAutoPageTurnIntervalSeconds(uint16_t seconds) {
   pageTurnDuration = static_cast<unsigned long>(seconds) * 1000UL;
   automaticPageTurnActive = true;
 
-  const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
-  // resets cached section so that space is reserved for auto page turn indicator when None or progress bar only
-  if (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight()) {
+  // Reserve a text lane for the auto-turn label when the configured bottom bar has none.
+  if (!ReaderUtils::bottomStatusBarHasTextLane()) {
     // Preserve current reading position so we can restore after reflow.
     RenderLock lock(*this);
     prepareCurrentSectionForRelayout();
@@ -7569,34 +7585,28 @@ void EpubReaderActivity::renderStatusBar() const {
     resolveChapterGroupPageProgress(currentPage, pageCount, chapterProgress, pageCountEstimated);
   }
 
+  const auto topBar = SETTINGS.readerStatusBar(ReaderStatusBarPosition::Top);
+  const auto bottomBar = SETTINGS.readerStatusBar(ReaderStatusBarPosition::Bottom);
+  const auto uses = [&](const ReaderStatusBarItem item) { return topBar.contains(item) || bottomBar.contains(item); };
+
   uint32_t referencePage = 0;
   uint32_t referencePageCount = 0;
-  if (activeFootnotePreview || !SETTINGS.stablePageNumbers ||
+  if (activeFootnotePreview || !uses(ReaderStatusBarItem::StablePageNumber) ||
       !epub->resolveReferencePage(currentSpineIndex, sectionProgress, referencePage, referencePageCount)) {
     referencePage = 0;
     referencePageCount = 0;
   }
 
-  std::string title;
-
-  int textYOffset = 0;
+  std::string chapterTitle;
+  char autoTurnLabel[96] = {};
 
   if (automaticPageTurnActive) {
     // Fixed-shape label on a per-page-render path: format on the stack instead of
     // allocating a std::to_string temporary and a concatenation result each time.
     // Sized for the longest translated prefix (Kazakh, 53 bytes) plus the interval
     // digits, so no locale is cut short or sliced mid-codepoint.
-    char autoTurnLabel[96];
     snprintf(autoTurnLabel, sizeof(autoTurnLabel), "%s%lu", tr(STR_AUTO_TURN_ENABLED), pageTurnDuration / 1000);
-    title = autoTurnLabel;
-
-    // calculates textYOffset when rendering title in status bar
-    const uint8_t statusBarHeight = UITheme::getInstance().getStatusBarHeight();
-
-    // offsets text if no status bar or progress bar only
-    if (statusBarHeight == 0 || statusBarHeight == UITheme::getInstance().getProgressBarHeight()) {
-      textYOffset += UITheme::getInstance().getMetrics().statusBarVerticalMargin;
-    }
+    chapterTitle = autoTurnLabel;
 
   }
 #if CROSSINK_APP_CAP_TOUCH
@@ -7604,23 +7614,20 @@ void EpubReaderActivity::renderStatusBar() const {
     // The touch header owns the preview title; keep the footer from repeating it.
   }
 #else
-  else if (activeFootnotePreview && SETTINGS.statusBarTitle != CrossPointSettings::STATUS_BAR_TITLE::HIDE_TITLE) {
-    title = tr(STR_FOOTNOTES);
+  else if (activeFootnotePreview && uses(ReaderStatusBarItem::TitleChapter)) {
+    chapterTitle = tr(STR_FOOTNOTES);
   }
 #endif
-  else if (SETTINGS.statusBarTitle == CrossPointSettings::STATUS_BAR_TITLE::CHAPTER_TITLE) {
-    title = tr(STR_UNNAMED);
+  else if (uses(ReaderStatusBarItem::TitleChapter)) {
+    chapterTitle = tr(STR_UNNAMED);
     int titleSpineIndex = currentSpineIndex;
     int groupLastSpineIndex = currentSpineIndex;
     epub->resolveChapterGroupRange(currentSpineIndex, titleSpineIndex, groupLastSpineIndex);
     const int tocIndex = epub->getTocIndexForSpineIndex(titleSpineIndex);
     if (tocIndex != -1) {
       const auto tocItem = epub->getTocItem(tocIndex);
-      title = tocItem.title;
+      chapterTitle = tocItem.title;
     }
-
-  } else if (SETTINGS.statusBarTitle == CrossPointSettings::STATUS_BAR_TITLE::BOOK_TITLE) {
-    title = epub->getTitle();
   }
 
   const int bookmarkPageCount = estimatedPageCount > 0 ? estimatedPageCount : 1;
@@ -7630,14 +7637,40 @@ void EpubReaderActivity::renderStatusBar() const {
   const bool bookmarked =
       !activeFootnotePreview &&
       BOOKMARKS.hasBookmarkForPage(static_cast<uint16_t>(currentSpineIndex), rawProgress, bookmarkPageCount);
-  char timeLeftLabel[24] = {};
-  const char* timeLeft =
-      (!activeFootnotePreview && formatTimeLeftLabel(timeLeftLabel, sizeof(timeLeftLabel))) ? timeLeftLabel : nullptr;
-  GUI.drawStatusBar(renderer, bookProgress, currentPage, pageCount, title.c_str(), 0, textYOffset, bookmarked, timeLeft,
-                    ReaderUtils::readerDarkModeEnabled(), chapterProgress * 100.0f, static_cast<int>(referencePage),
-                    static_cast<int>(referencePageCount), !activeFootnotePreview, pageCountEstimated);
-  GUI.drawTopStatusBarClock(renderer, UITheme::getInstance().getMetrics().topPadding, nullptr, true, 0,
-                            ReaderUtils::readerDarkModeEnabled());
+  char bookTime[24] = {};
+  char chapterTime[24] = {};
+  ReaderStatusBarContent content;
+  content.bookProgress = bookProgress;
+  content.chapterProgress = chapterProgress * 100.0f;
+  content.chapterPage = currentPage;
+  content.chapterPageCount = pageCount;
+  content.stablePage = static_cast<int>(referencePage);
+  content.stablePageCount = static_cast<int>(referencePageCount);
+  const char* bookTitle = uses(ReaderStatusBarItem::TitleBook) ? epub->getTitle().c_str() : nullptr;
+  if (activeFootnotePreview) {
+#if CROSSINK_APP_CAP_TOUCH
+    bookTitle = nullptr;
+#else
+    bookTitle = tr(STR_FOOTNOTES);
+#endif
+  }
+  content.bookTitle = automaticPageTurnActive ? autoTurnLabel : bookTitle;
+  content.chapterTitle = chapterTitle.c_str();
+  content.timeLeftBook = !activeFootnotePreview && uses(ReaderStatusBarItem::TimeLeftBook) &&
+                                 formatTimeLeftLabel(bookTime, sizeof(bookTime), true)
+                             ? bookTime
+                             : nullptr;
+  content.timeLeftChapter = !activeFootnotePreview && uses(ReaderStatusBarItem::TimeLeftChapter) &&
+                                    formatTimeLeftLabel(chapterTime, sizeof(chapterTime), false)
+                                ? chapterTime
+                                : nullptr;
+  content.bookmarked = bookmarked;
+  content.showProgress = !activeFootnotePreview;
+  content.pageCountEstimated = pageCountEstimated;
+  content.darkMode = ReaderUtils::readerDarkModeEnabled();
+  content.autoTurnLabel = automaticPageTurnActive ? autoTurnLabel : nullptr;
+  GUI.drawReaderStatusBar(renderer, ReaderStatusBarPosition::Top, content);
+  GUI.drawReaderStatusBar(renderer, ReaderStatusBarPosition::Bottom, content);
 }
 
 void EpubReaderActivity::refreshChapterGroupEstimate(const uint16_t viewportWidth, const uint16_t viewportHeight) {
