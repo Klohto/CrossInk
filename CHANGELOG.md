@@ -44,6 +44,7 @@
 - Adding the sleep moon to the last screen no longer flashes white in night mode.
 - Waking the reader skips the intermediate loading icon refresh.
 - Screenshot folder names keep complete non-English characters when shortened.
+- Longer power-on instructions wrap on the finished update screen.
 
 ## [v1.6.0] - 2026-09-21
 
