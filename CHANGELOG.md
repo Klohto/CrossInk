@@ -39,6 +39,7 @@
 - Keep clipped text, exported excerpts, and chapter titles on complete characters when shortened.
 - Keep clipping-selection button hints from covering book text.
 - Changing a reader font with incremental indexing now returns after the current reading position is ready, instead of waiting for the whole chapter to be re-indexed.
+- Release builds use the pinned PlatformIO core during nested ESP-IDF configuration.
 
 ## [v1.6.0] - 2026-09-21
 
