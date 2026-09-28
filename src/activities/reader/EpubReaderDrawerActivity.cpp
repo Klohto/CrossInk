@@ -490,6 +490,7 @@ void EpubReaderDrawerActivity::onExit() {
   if (!mappedInput.hasTouchHardware()) {
     const auto heap = MemoryBudget::snapshot();
     LOG_DBG("ERDM", "Button preview released: free=%u maxAlloc=%u", heap.freeHeap, heap.maxAllocHeap);
+    (void)heap;
   }
   dictionaryRegistry.clear();
   // The reader remains active beneath this drawer. Keep the small catalog for
@@ -887,6 +888,7 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
   const fui::Rect tabs = buttonDevice ? screen.takeTop(tabBarHeight) : screen.takeBottom(tabBarHeight);
   buildTabBar(screen, tabs, buttonDevice);
   samplePreviewBounds = {};
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
   if (showsSamplePreview()) {
     const auto& metrics = UITheme::getInstance().getMetrics();
     // In portrait, keep the sample at its pre-header height so the new book
@@ -908,6 +910,7 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
     samplePreviewBounds =
         screen.takeTop(static_cast<int16_t>(previewHeight), static_cast<int16_t>(metrics.verticalSpacing));
   }
+#endif
   screen.insetContent(fui::Insets{sheet.ruleWidth, DRAWER_SIDE_INSET, 0, DRAWER_SIDE_INSET});
 
   switch (state.pane) {
@@ -1880,7 +1883,6 @@ void EpubReaderDrawerActivity::showEnumOptions(const RowId row) {
   uint8_t currentRaw = 0;
 
   if (row == RowId::FontSize) {
-    if (draft.sdFontFamilyName[0] != '\0') sdFontSystem.refreshIfDirty();
     if (draft.sdFontFamilyName[0] != '\0') {
       sdFontSystem.refreshIfDirty();
       if (const auto* family = sdFontSystem.registry().findFamily(draft.sdFontFamilyName.data())) {
@@ -2530,7 +2532,9 @@ void EpubReaderDrawerActivity::renderPreviewUnavailable() {
 bool EpubReaderDrawerActivity::renderPreview(int& previewFontId,
                                              std::optional<FontCacheManager::PrewarmScope>& prewarmScope) {
   previewFontId = -1;
-  if (CROSSINK_APP_READER_SAMPLE_PREVIEW && !showsSamplePreview()) return false;
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+  if (!showsSamplePreview()) return false;
+#endif
   if (!previewDirty) return false;
   previewDirty = false;
   const auto releasePreviewIfBelowReserve = [this, &previewFontId] {
@@ -2836,7 +2840,10 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   int previewFontId = -1;
   // Keep prewarmed glyphs resident through the BW and optional touch grayscale passes.
   std::optional<FontCacheManager::PrewarmScope> previewPrewarmScope;
-  bool previewRendered = !CROSSINK_APP_READER_SAMPLE_PREVIEW && renderPreview(previewFontId, previewPrewarmScope);
+  bool previewRendered;
+#if !CROSSINK_APP_READER_SAMPLE_PREVIEW
+  previewRendered = renderPreview(previewFontId, previewPrewarmScope);
+#endif
   uiReady = false;
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW && fontPreviewLoading) {
     GUI.drawPopup(renderer, tr(STR_LOADING_POPUP), true);
@@ -2845,15 +2852,15 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   app.setDevice(uiTarget.deviceContext());
   app.render();
   if (buttonDevice) drawButtonBookHeader();
-  if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
-    previewDirty = true;  // The full-screen UI cleared the sample area as well.
-    previewRendered = renderPreview(previewFontId, previewPrewarmScope);
-    if (showsSamplePreview() && previewUnavailable) {
-      app.render();  // A failed font selection rolled the draft back; repaint its values too.
-      drawButtonBookHeader();
-      renderPreviewUnavailable();
-    }
+#if CROSSINK_APP_READER_SAMPLE_PREVIEW
+  previewDirty = true;  // The full-screen UI cleared the sample area as well.
+  previewRendered = renderPreview(previewFontId, previewPrewarmScope);
+  if (showsSamplePreview() && previewUnavailable) {
+    app.render();  // A failed font selection rolled the draft back; repaint its values too.
+    drawButtonBookHeader();
+    renderPreviewUnavailable();
   }
+#endif
   uiReady = true;
   if (!mappedInput.hasTouchHardware()) {
     const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);

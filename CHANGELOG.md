@@ -1,33 +1,31 @@
-## [Unreleased]
+## [v1.6.1] - 2026-09-30
 
 ### Added
 
 - Turn reading stats tracking on or off for the whole device or individual EPUB and XTC books, while keeping saved history and Time Left estimates.
 - Assign separate short-press and long-press actions to the Left/Up and Right/Down side buttons; existing side-button layouts migrate to matching individual actions.
 - Assign a side-button shortcut to flip the reading screen 180°, alongside clockwise and counterclockwise turns.
+- TTF font support on ESP32-S3 devices. Whole-point sizes from 8pt to 22pt will be automatically available.
+- Library replaces Recent Books with a searchable book list, and adds various book metadata sort options.
 - Assign Library to power, long-press, button-chord, Home-button, or Quick Actions shortcuts to open the book list directly.
 - Customize the top and bottom reader status bars separately, including item positions and progress bars, in EPUB, TXT, and XTC books. Each bar can be previewed where it appears while reading.
-- View a selected book's reading stats from its Library or File Browser action menu.
-- Library replaces Recent Books with a searchable book list, and adds various book metadata sort options.
-- Reset a book's reader settings from the in-reader Settings tab.
 - Assign actions to upward and downward slides along either screen edge on touch devices.
-- TTF font support on ESP32-S3 devices. Whole-point sizes from 8pt to 22pt will be automatically available.
-- In-reader menu for X3/X4/X4 Classic have been updated to a modified version of the in-reader menu for touch devices
-- Chapter pages and book progress information is displayed in the frontlight drawer when in the reader for X4 Pro
+- View a selected book's reading stats from its Library or File Browser action menu.
+- Reset a book's reader settings from the in-reader Settings tab.
+- View chapter pages and book progress in the X4 Pro frontlight drawer while reading.
 - Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
 - Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
 
 ### Changed
 
 - Set Power short-press and long-press to Sleep, Wake, or Sleep/Wake separately; holding Power can always wake the device. Chord shortcuts and the home button can also now sleep the device.
-- Brightness and warmth gestures now respond while you drag, with longer swipes making larger adjustments.
+- Brightness and warmth gestures now respond while you drag, with longer swipes allowing finer one-point adjustments.
 - Text drawing resolves clipping and screen rotation once per glyph, reducing work when painting menus and book pages.
 - Library reuses its index on return visits and refreshes after file changes, instead of scanning the card every time.
 - Home reads saved EPUB progress and chapter metadata without opening or indexing the book, and stops saved-item checks after the first file.
 - Optional EPUB background work yields immediately when rendering is busy, keeping input polling responsive.
 - SD-card fonts share identical character lookup tables across styles, reducing memory use and repeated card reads.
-- EPUB reader menus now share five tabs across devices. Button devices gain live font and margin previews, Reading Stats, and in-book transfer options.
-- Brightness and warmth gestures now adjust in one-point steps for finer control.
+- EPUB reader menus now share five tabs across devices. X3, X4, and X4 Classic gain live font and margin previews, Reading Stats, and in-book transfer options.
 - The on-screen keyboard now uses wider outlined keys with clearer spacing on touch and button devices.
 - Long status titles shorten faster when they do not fit the screen.
 - Leaving an EPUB or TXT reader releases rebuildable font buffers for other screens.

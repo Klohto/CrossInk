@@ -7,7 +7,11 @@ fixed-size char buffer.
 
 ## `/.crosspoint/home_carousel_cache_<index>.bin`
 
-### Version 8
+### Version 6
+
+The v1.6.1 release normalizes development version 8 to version 6, one step
+after v1.6.0. The new per-position filenames and artwork cache keys prevent
+reuse of older combined snapshots.
 
 Each Carousel position has a disposable snapshot containing only cover artwork,
 titles and position dots. Progress, reading time, header, menu icons and button
@@ -18,9 +22,9 @@ The key tracks ordered book paths, titles, cover paths, thumbnail availability a
 image polarity, rather than reading progress or statistics.
 
 Frames are rendered and saved only when viewed; returning Home does not prepare
-other positions in advance. Version 7's combined `home_carousel_cache.bin` is
-removed after the first successful write. Cache regeneration is automatic;
-EPUB layout caches and reading history are unaffected.
+other positions in advance. The development version 7 combined
+`home_carousel_cache.bin` is removed after the first successful write. Cache
+regeneration is automatic; EPUB layout caches and reading history are unaffected.
 
 ## `/.crosspoint/ttf-rendering.json`
 
@@ -296,7 +300,7 @@ if (parsedSize != fileSize) {
 
 ## `reader_settings.bin`
 
-### Version 9
+### Version 10
 
 Each EPUB cache directory may contain `reader_settings.bin`. Missing files mean
 the book uses global Reader settings and the default auto-page-turn interval.
@@ -474,6 +478,11 @@ their coordinates; full section caches (byte `80`) and suspended partial caches 
 existing books receive the new layout. The CSS rule cache moves to version `19`
 so `display: inline` rules retain their meaning.
 
+The v1.6.1 release retains version `80` and partial marker `0xC1`: development
+versions `78` and `79` used the older image payload, and earlier release
+preparation used partial marker `0x80`. Reusing those identifiers could accept
+incompatible saved pages. All of those older caches rebuild automatically.
+
 ### Version 79
 
 Version 79 keeps the version 78 serialized layout. Korean words now wrap at
@@ -514,8 +523,10 @@ version byte `66`, and suspended partials use sentinel byte `0xF6`.
 The stable v1.5.1 release retains these identifiers from RC6. Do not normalize
 published RC versions to the previous stable version plus one: v1.5.0 used
 `60` / `0xF9`, and RC4 already shipped `61` / `0xF8` with older layout output.
-Reusing those identifiers could accept stale RC caches as current. Per-book
-reader settings likewise retain version `9` and their version 7/8 migrations.
+Reusing those identifiers could accept stale RC caches as current. Version 9
+per-book reader settings and their version 7/8 migrations remain
+readable. Version 10 adds a field-override mask so a book can inherit unrelated
+global reader settings.
 
 ### Version 62
 

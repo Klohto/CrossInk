@@ -26,6 +26,9 @@ constexpr uint8_t kPreviousFullVersion = 79;
 constexpr uint8_t kPreviousPartialVersion = 0xF4;
 constexpr uint8_t kOlderFullVersion = 78;
 constexpr uint8_t kOlderPartialVersion = 0xF2;
+constexpr uint8_t kLastReleaseFullVersion = 77;
+constexpr uint8_t kLastReleasePartialVersion = 0xF3;
+constexpr uint8_t kPreviousReleasePrepPartialVersion = 0x80;
 
 ReaderRenderSpec renderSpec() {
   ReaderRenderSpec spec;
@@ -159,7 +162,8 @@ TEST_F(SectionPersistenceTest, FailedCommitKeepsThePreviousReadableCache) {
 
 TEST_F(SectionPersistenceTest, RejectsCachesFromPreviousLayoutRevisions) {
   for (const uint8_t staleVersion :
-       {kPreviousFullVersion, kPreviousPartialVersion, kOlderFullVersion, kOlderPartialVersion}) {
+       {kPreviousFullVersion, kPreviousPartialVersion, kOlderFullVersion, kOlderPartialVersion, kLastReleaseFullVersion,
+        kLastReleasePartialVersion, kPreviousReleasePrepPartialVersion}) {
     SectionHarness harness;
     harness.begin();
     harness.appendPages(1);

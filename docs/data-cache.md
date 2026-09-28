@@ -29,7 +29,7 @@ The main data directory is `.crosspoint` on the SD card. It stores render caches
 ├── koreader.json           # KOReader sync credentials
 ├── bookmarks/              # Bookmark files, one per book
 ├── clippings/              # EPUB clipping/highlight files, one per book
-├── home_carousel_cache.bin # Lyra Carousel home-screen snapshot cache
+├── home_carousel_cache_<index>.bin # Lyra Carousel artwork cache for each book position
 ├── sleep_frame.bin         # Temporary sleep overlay framebuffer, when used
 ├── epub_12471232/          # Each EPUB is cached to epub_<hash>
 │   ├── progress.bin        # Reading position (chapter, page, etc.)
@@ -65,7 +65,7 @@ To clear EPUB/XTC render caches from the device UI without deleting settings or 
 
 Cache folders are path-based. Moving a book file can create a new cache directory, so the moved copy may start with fresh reading progress unless the firmware migrates the cache for that move. CrossInk migrates cache and bookmark data for the built-in move-to-Read flow and related file-browser move actions.
 
-EPUB reader font, page layout, styling, and reading-aid settings normally come from the global Reader settings. Changes made inside an EPUB override only the fields whose values differ from the global defaults; the other fields continue to inherit later global changes. EPUB render mode is stored separately per book so a problematic title can be switched to Balanced or Light rendering from the File Browser or Recent Books long-press menus before opening it. Older full-snapshot book overrides retain their original behavior until reset or edited again.
+EPUB reader font, page layout, styling, and reading-aid settings normally come from the global Reader settings. Changes made inside an EPUB override only the fields whose values differ from the global defaults; the other fields continue to inherit later global changes. EPUB render mode is stored separately per book so a problematic title can be switched to Balanced or Light rendering from the File Browser or Library long-press menus before opening it. Older full-snapshot book overrides retain their original behavior until reset or edited again.
 
 EPUB clippings and highlights live outside the EPUB render-cache folder in
 `/.crosspoint/clippings/`. Each book gets a binary clipping file named from the
@@ -96,7 +96,7 @@ screen. Ordinary return visits reuse the index. Failed or memory-limited scans a
 retried on the next visit. The Library's refresh action always scans again; use it
 if files were changed externally while the firmware stayed running.
 Unchanged books reuse their cached metadata.
-**Settings > Display > Use Book Metadata** selects embedded EPUB titles and
+**Library > Settings > Use Book Metadata** selects embedded EPUB titles and
 authors; disabling it uses filenames. TXT, Markdown and XTC files use filename
 fallbacks. CLX1 version 2 adds a first-name author permutation; older Library
 indexes rebuild automatically when Library opens.
