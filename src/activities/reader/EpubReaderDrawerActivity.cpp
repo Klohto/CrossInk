@@ -874,10 +874,12 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
     const fui::Rect sheetContent = screen.sheet(sheet, drawerHeight());
     drawerHandleRect = DrawerHandle::registerTap(screen.frame(), sheetContent, sheet, ACTION_DISMISS);
   }
+  int16_t buttonHeaderHeight = 0;
   if (buttonDevice) {
     const auto& metrics = UITheme::getInstance().getMetrics();
-    screen.takeTop(static_cast<int16_t>(metrics.topPadding + TouchHeaderBackButton::height(metrics, mappedInput) +
-                                        metrics.tabBarHeight));
+    buttonHeaderHeight = static_cast<int16_t>(metrics.topPadding + TouchHeaderBackButton::height(metrics, mappedInput) +
+                                              metrics.tabBarHeight);
+    screen.takeTop(buttonHeaderHeight);
   }
   // Give every tab row four pixels of white space above and below its icons.
   // The tab pill keeps its previous size so the selected background does not
@@ -887,7 +889,11 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
   samplePreviewBounds = {};
   if (showsSamplePreview()) {
     const auto& metrics = UITheme::getInstance().getMetrics();
-    int previewHeight = screen.body().height * metrics.previewHeightPercent / 100;
+    // In portrait, keep the sample at its pre-header height so the new book
+    // progress row does not remove a line. Landscape needs room for its rows.
+    const int previewBaseHeight =
+        screen.body().height + (isLandscapeOrientation(renderer.getOrientation()) ? 0 : buttonHeaderHeight);
+    int previewHeight = previewBaseHeight * metrics.previewHeightPercent / 100;
     if (readerDrawerSliderPreviewsText(state.pane)) {
       // Leave both controls and both translated help lines usable in landscape.
       ReaderSliderRowProps row;
