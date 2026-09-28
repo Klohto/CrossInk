@@ -1600,7 +1600,8 @@ void loop() {
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
-  if (Serial && millis() - lastMemPrint >= 10000) {
+  // ROM logging works even when Arduino Serial reports no connected listener.
+  if ((Serial || FREEINK_LOG_TRANSPORT == FREEINK_LOG_TRANSPORT_ROM_PRINTF) && millis() - lastMemPrint >= 10000) {
     logMemoryStats("Periodic");
     lastMemPrint = millis();
   }
