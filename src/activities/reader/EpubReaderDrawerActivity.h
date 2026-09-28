@@ -86,8 +86,8 @@ class EpubReaderDrawerActivity final : public Activity {
 
   std::shared_ptr<Epub> epub;
   const EpubReaderPreviewModel* previewModel = nullptr;
-  // Button devices own their preview only while the menu is open. C3 uses a
-  // small sample paragraph; S3 retains its current-page preview.
+  // Button devices own their bounded sample paragraph while the menu is open.
+  // Touch devices use the reader's current-page preview instead.
   std::unique_ptr<EpubReaderPreviewModel> ownedPreviewModel;
   bool previewUnavailable = false;
   freeink::ui::Rect samplePreviewBounds{};

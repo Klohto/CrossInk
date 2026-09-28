@@ -582,12 +582,8 @@ using SampleReaderPreviewModel = ReaderPreviewModel<sizeof(READER_PREVIEW_PARAGR
 static_assert(sizeof(SampleReaderPreviewModel) <= 3U * 1024U, "Sample preview exceeds its C3 budget");
 
 using TouchReaderPreviewModel = ReaderPreviewModel<8U * 1024U, 256, 128, true>;
-using ButtonReaderPreviewModel = ReaderPreviewModel<4U * 1024U, 128, 32, false>;
-static_assert(sizeof(ButtonReaderPreviewModel) <= 12U * 1024U, "Button reader preview exceeds C3 budget");
 #if CROSSINK_APP_READER_SAMPLE_PREVIEW
 using EpubReaderPreviewModel = SampleReaderPreviewModel;
-#elif CROSSINK_APP_CAP_TOUCH
-using EpubReaderPreviewModel = TouchReaderPreviewModel;
 #else
-using EpubReaderPreviewModel = ButtonReaderPreviewModel;
+using EpubReaderPreviewModel = TouchReaderPreviewModel;
 #endif

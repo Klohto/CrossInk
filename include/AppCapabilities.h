@@ -39,11 +39,5 @@
 #endif
 #endif
 
-// X3/X4 use a small sample paragraph in full-screen reader menus. Keep the
-// button-only S3 X4 Classic on its existing page-preview drawer.
-#if (defined(FREEINK_DEVICE_X3) && FREEINK_DEVICE_X3) || (defined(FREEINK_DEVICE_X4) && FREEINK_DEVICE_X4) || \
-    (defined(SIMULATOR) && !CROSSINK_APP_CAP_TOUCH && !defined(SIMULATOR_DEVICE_X4_CLASSIC))
-#define CROSSINK_APP_READER_SAMPLE_PREVIEW 1
-#else
-#define CROSSINK_APP_READER_SAMPLE_PREVIEW 0
-#endif
+// Every button-only reader uses the full-screen menu and its bounded sample preview.
+#define CROSSINK_APP_READER_SAMPLE_PREVIEW (!CROSSINK_APP_CAP_TOUCH)

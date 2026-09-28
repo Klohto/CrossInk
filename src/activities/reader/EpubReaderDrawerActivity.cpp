@@ -66,7 +66,6 @@ constexpr int16_t BACK_ICON_VISIBLE_LEFT_INSET = 7;
 constexpr int16_t BACK_ICON_SIZE = 32;
 constexpr int16_t BACK_CARET_HIT_WIDTH = 64;
 constexpr int LANDSCAPE_ROOT_ROWS = 4;
-constexpr int BUTTON_LANDSCAPE_ROOT_ROWS = 6;
 // Sentinel ACTION_KEYPAD_KEY values for the grid's two non-digit keys; digits use
 // their own 0-9 value. Backspace is a separate button (ACTION_KEYPAD_BACKSPACE),
 // not a grid key, so it does not need a sentinel here.
@@ -78,7 +77,6 @@ constexpr uint8_t PORTRAIT_DRAWER_HEIGHT_PERCENT = 50;
 // height is calculated from the rows reserved in drawerHeight().
 constexpr uint8_t LANDSCAPE_DRAWER_HEIGHT_PERCENT = 65;
 constexpr uint8_t LANDSCAPE_DUAL_SLIDER_DRAWER_HEIGHT_PERCENT = 75;
-constexpr int16_t BUTTON_SLIDER_EXTRA_HEIGHT = 56;
 
 bool isLandscapeOrientation(const GfxRenderer::Orientation orientation) {
   return orientation == GfxRenderer::Orientation::LandscapeClockwise ||
@@ -433,8 +431,7 @@ EpubReaderDrawerActivity::EpubReaderDrawerActivity(
   }
   if (!this->previewModel) this->previewModel = this->ownedPreviewModel.get();
   previewUnavailable = !mappedInput.hasTouchHardware() && !this->previewModel;
-  // Button drawers cover the top of the page, so their exposed preview needs
-  // a fresh draw with its text starting below the drawer.
+  // The button menu paints the whole screen, including its sample preview.
   previewDirty = !mappedInput.hasTouchHardware();
 }
 
@@ -459,19 +456,6 @@ void EpubReaderDrawerActivity::onEnter() {
   }
   paneRows.reserve(7);
   discoverDictionaries();
-  if (ownedPreviewModel && !CROSSINK_APP_READER_SAMPLE_PREVIEW) {
-    const auto heap = MemoryBudget::snapshot();
-    LOG_DBG("ERDM", "Button drawer ready: free=%u maxAlloc=%u", heap.freeHeap, heap.maxAllocHeap);
-    if (!MemoryBudget::hasHeap(heap, MemoryBudget::EPUB_TEXT_LAYOUT_MIN_FREE,
-                               MemoryBudget::EPUB_TEXT_LAYOUT_MIN_MAX_ALLOC)) {
-      LOG_DBG("ERDM", "Discarding button preview to preserve EPUB layout heap");
-      ownedPreviewModel.reset();
-      previewModel = nullptr;
-      previewUnavailable = true;
-      previewDirty = true;
-    }
-  }
-
   applySharedUiTheme(app, uiTarget);
   app.on(ACTION_ROW, &EpubReaderDrawerActivity::onRowEvent, this);
   app.on(ACTION_TAB, &EpubReaderDrawerActivity::onTabEvent, this);
@@ -842,18 +826,11 @@ int16_t EpubReaderDrawerActivity::drawerHeight() const {
   const int16_t tabBarHeight = static_cast<int16_t>(TAB_BAR_HEIGHT + TAB_BAR_VERTICAL_PADDING * 2);
   int16_t drawerHeight = static_cast<int16_t>(readerDrawerHeight(renderer, state.pane) + grabberBand);
   if (state.pane == ReaderDrawerPane::Root && isLandscapeOrientation(renderer.getOrientation())) {
-    const bool buttonDevice = !mappedInput.hasTouchHardware();
-    const int16_t rowHeight =
-        buttonDevice ? uiListRowHeight(app.theme(), UiListRowType::SingleLine) : app.theme().rowHeight;
-    const int16_t gap = buttonDevice ? static_cast<int16_t>(app.theme().spaceMd * rowHeight / app.theme().rowHeight)
-                                     : app.theme().spaceSm;
-    drawerHeight = static_cast<int16_t>(
-        grabberBand + sheet.ruleWidth + tabBarHeight + DRAWER_LIST_TOP_PADDING +
-        readerDrawerListHeightForRows(buttonDevice ? BUTTON_LANDSCAPE_ROOT_ROWS : LANDSCAPE_ROOT_ROWS, rowHeight, gap));
+    const int16_t rowHeight = app.theme().rowHeight;
+    const int16_t gap = app.theme().spaceSm;
+    drawerHeight = static_cast<int16_t>(grabberBand + sheet.ruleWidth + tabBarHeight + DRAWER_LIST_TOP_PADDING +
+                                        readerDrawerListHeightForRows(LANDSCAPE_ROOT_ROWS, rowHeight, gap));
     drawerHeight = std::min<int16_t>(drawerHeight, renderer.getScreenHeight());
-  } else if (!mappedInput.hasTouchHardware() && readerDrawerSliderPreviewsText(state.pane)) {
-    drawerHeight =
-        std::min<int16_t>(static_cast<int16_t>(drawerHeight + BUTTON_SLIDER_EXTRA_HEIGHT), renderer.getScreenHeight());
   }
   return drawerHeight;
 }
@@ -861,8 +838,7 @@ int16_t EpubReaderDrawerActivity::drawerHeight() const {
 fui::Rect EpubReaderDrawerActivity::previewBounds() const {
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW) return samplePreviewBounds;
   const int16_t height = static_cast<int16_t>(renderer.getScreenHeight() - drawerHeight());
-  const int16_t top = mappedInput.hasTouchHardware() ? 0 : drawerHeight();
-  return fui::Rect{0, top, renderer.getScreenWidth(), height};
+  return fui::Rect{0, 0, renderer.getScreenWidth(), height};
 }
 
 bool EpubReaderDrawerActivity::showsSamplePreview() const {
@@ -873,7 +849,7 @@ bool EpubReaderDrawerActivity::showsSamplePreview() const {
 void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
   fui::SheetProps sheet;
   const bool buttonDevice = !mappedInput.hasTouchHardware();
-  sheet.anchor = buttonDevice ? fui::SheetEdge::Top : fui::SheetEdge::Bottom;
+  sheet.anchor = fui::SheetEdge::Bottom;
   sheet.dismissAction = ACTION_DISMISS;
   sheet.radius = 0;
   sheet.ruleWidth = DRAWER_RULE_WIDTH;
@@ -888,12 +864,6 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
   } else {
     const fui::Rect sheetContent = screen.sheet(sheet, drawerHeight());
     drawerHandleRect = DrawerHandle::registerTap(screen.frame(), sheetContent, sheet, ACTION_DISMISS);
-    if (buttonDevice) {
-      const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
-      screen.insetContent(fui::Insets{static_cast<int16_t>(safe.y),
-                                      static_cast<int16_t>(renderer.getScreenWidth() - safe.x - safe.width), 0,
-                                      static_cast<int16_t>(safe.x)});
-    }
   }
   // Give every tab row four pixels of white space above and below its icons.
   // The tab pill keeps its previous size so the selected background does not
@@ -2443,7 +2413,7 @@ void EpubReaderDrawerActivity::renderPreviewText(const ReaderSettingsDraft& prev
     return;
   }
   const fui::Rect preview = previewBounds();
-  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, !mappedInput.hasTouchHardware(), false);
+  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, false, false);
   const int clipTop = std::max<int>(preview.y, safe.y);
   const int clipBottom = std::min<int>(preview.bottom(), safe.y + safe.height);
   const int clipHeight = std::max(0, clipBottom - clipTop);
@@ -2470,9 +2440,8 @@ void EpubReaderDrawerActivity::renderPreviewText(const ReaderSettingsDraft& prev
   (void)orientedLeft;
   const int clockReservation = ReaderUtils::getTopStatusBarReservedHeight(renderer);
   const int previewYOffset =
-      orientedTop + (mappedInput.hasTouchHardware() ? 0 : preview.y) +
-      std::max(static_cast<int>(previewSettings.screenMarginVertical),
-               clockReservation > 0 ? clockReservation + ReaderUtils::TOP_STATUS_BAR_TEXT_PADDING : 0);
+      orientedTop + std::max(static_cast<int>(previewSettings.screenMarginVertical),
+                             clockReservation > 0 ? clockReservation + ReaderUtils::TOP_STATUS_BAR_TEXT_PADDING : 0);
   const int previewWidth =
       std::max(1, renderer.getScreenWidth() - static_cast<int>(previewSettings.screenMarginHorizontal) * 2);
   renderer.beginTextClip(safe.x, clipTop, safe.width, clipHeight);
@@ -2526,10 +2495,6 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId,
     LOG_ERR("ERDM", "Button preview exhausted EPUB layout reserve: free=%u maxAlloc=%u", heap.freeHeap,
             heap.maxAllocHeap);
     restoreReaderDraftFont(draft, lastGoodPreviewSettings);
-    if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
-      ownedPreviewModel.reset();
-      previewModel = nullptr;
-    }
     previewUnavailable = true;
     previewFontId = -1;
     renderPreviewUnavailable();
@@ -2562,10 +2527,6 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId,
   if (!fontLoaded && ownedPreviewModel) {
     LOG_ERR("ERDM", "Could not load selected SD font for button preview");
     restoreReaderDraftFont(draft, lastGoodPreviewSettings);
-    if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
-      ownedPreviewModel.reset();
-      previewModel = nullptr;
-    }
     previewUnavailable = true;
     previewFontId = -1;
     renderPreviewUnavailable();
@@ -2578,10 +2539,6 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId,
     if (!prewarmScope->endScanAndPrewarm() && ownedPreviewModel) {
       LOG_ERR("ERDM", "Could not prewarm selected font for button preview");
       restoreReaderDraftFont(draft, lastGoodPreviewSettings);
-      if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
-        ownedPreviewModel.reset();
-        previewModel = nullptr;
-      }
       previewUnavailable = true;
       previewFontId = -1;
       renderPreviewUnavailable();
@@ -2810,10 +2767,8 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   const int16_t drawerEdge =
       buttonDevice ? drawerHeight() : static_cast<int16_t>(renderer.getScreenHeight() - drawerHeight());
   if (previousDrawerEdge >= 0 && drawerEdge != previousDrawerEdge) {
-    // The button preview starts at the sheet's lower edge, so either height
-    // change moves its text origin. A shorter sheet also exposes old pixels.
-    if (buttonDevice) previewDirty = true;
-    if (buttonDevice ? drawerEdge < previousDrawerEdge : drawerEdge > previousDrawerEdge) {
+    // Only the touch sheet changes height; redraw newly exposed reader pixels.
+    if (drawerEdge > previousDrawerEdge) {
       const int16_t exposedTop = std::min(drawerEdge, previousDrawerEdge);
       renderer.fillRect(0, exposedTop, renderer.getScreenWidth(), std::abs(drawerEdge - previousDrawerEdge),
                         ReaderUtils::readerDarkModeEnabled());

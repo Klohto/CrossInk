@@ -9,6 +9,7 @@
 - Reset a book's reader settings from the in-reader Settings tab.
 - Assign actions to upward and downward slides along either screen edge on touch devices.
 - TTF font support on ESP32-S3 devices. Whole-point sizes from 8pt to 22pt will be automatically available.
+- In-reader menu for X3/X4/X4 Classic have been updated to a modified version of the in-reader menu for touch devices
 
 ### Changed
 

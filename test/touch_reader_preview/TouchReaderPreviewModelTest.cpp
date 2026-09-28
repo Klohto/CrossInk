@@ -317,26 +317,6 @@ TEST(TouchReaderPreviewModel, KeepsBoundedPreviewWhenPageHasMoreLinesThanSnapsho
   EXPECT_GT(renderer.drawCalls.back().x, 0);
 }
 
-TEST(ButtonReaderPreviewModel, CopiesOnlyBoundedTextAndReleasesThePage) {
-  GfxRenderer renderer;
-  ButtonReaderPreviewModel model;
-  std::weak_ptr<TextBlock> source;
-  {
-    Page page;
-    auto block = makeLine({"button", "preview"});
-    source = block;
-    page.elements.push_back(std::make_unique<PageLine>(block, 0, 0));
-    for (size_t i = 1; i <= ButtonReaderPreviewModel::LINE_CAPACITY; ++i) {
-      page.elements.push_back(std::make_unique<PageLine>(makeLine({"more"}), 0, static_cast<int16_t>(i * 10)));
-    }
-    ASSERT_TRUE(model.capture(page, renderer, 1, 100));
-  }
-  EXPECT_TRUE(source.expired());
-  model.renderText(renderer, 2, 0, 0, 80, 100, 0, 0, false, false, true);
-  EXPECT_EQ(renderer.drawCalls.size(), ButtonReaderPreviewModel::LINE_CAPACITY + 1);
-  EXPECT_EQ(renderer.drawCalls[0].text, "button");
-}
-
 TEST(SampleReaderPreviewModel, ContainsTheWholeParagraphWithoutABookPage) {
   SampleReaderPreviewModel model;
   ASSERT_TRUE(model.captureParagraph(READER_PREVIEW_PARAGRAPH));

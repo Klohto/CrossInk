@@ -2545,44 +2545,6 @@ void EpubReaderActivity::openReaderMenu() {
     LOG_ERR("ERDM", "Could not prepare sample reader preview");
     buttonPreviewModel.reset();
   }
-#elif !CROSSINK_APP_CAP_TOUCH
-  // Button-only S3 readers have no resident preview. Borrow one serialized
-  // page only while opening the menu, then release it before allocating the
-  // drawer. Keep enough internal heap for the next EPUB layout operation.
-  if (!previewActive && section &&
-      MemoryBudget::hasHeap(MemoryBudget::snapshot(), MemoryBudget::EPUB_TEXT_LAYOUT_MIN_FREE,
-                            MemoryBudget::EPUB_TEXT_LAYOUT_MIN_MAX_ALLOC)) {
-    const auto before = MemoryBudget::snapshot();
-    {
-      RenderLock lock(*this);
-      auto page = section->loadPage(section->currentPage);
-      if (page &&
-          MemoryBudget::canAllocateInternal(sizeof(EpubReaderPreviewModel), MemoryBudget::EPUB_TEXT_LAYOUT_MIN_FREE,
-                                            MemoryBudget::EPUB_TEXT_LAYOUT_MIN_MAX_ALLOC)) {
-        // Heap ownership is necessary: the preview outlives this page and is
-        // too large for the reader task stack, but lives only for this drawer.
-        buttonPreviewModel = makeUniqueNoThrow<EpubReaderPreviewModel>();
-        if (buttonPreviewModel) {
-          const int fontId = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
-          const ReaderViewportLayout layout = computeReaderViewportLayout(renderer, automaticPageTurnActive);
-          if (!buttonPreviewModel->capture(*page, renderer, fontId, SETTINGS.lineHeightPercent, layout.marginLeft,
-                                           layout.marginTop)) {
-            buttonPreviewModel.reset();
-          }
-        } else {
-          LOG_ERR("ERDM", "Could not allocate %u-byte button reader preview",
-                  static_cast<unsigned>(sizeof(EpubReaderPreviewModel)));
-        }
-      }
-    }
-    const auto after = MemoryBudget::snapshot();
-    LOG_DBG("ERDM", "Button preview capture: free/max %u/%u -> %u/%u", before.freeHeap, before.maxAllocHeap,
-            after.freeHeap, after.maxAllocHeap);
-    if (!MemoryBudget::hasHeap(after, MemoryBudget::EPUB_TEXT_LAYOUT_MIN_FREE,
-                               MemoryBudget::EPUB_TEXT_LAYOUT_MIN_MAX_ALLOC)) {
-      buttonPreviewModel.reset();
-    }
-  }
 #endif
   auto menuActivity = makeUniqueNoThrow<EpubReaderDrawerActivity>(
       renderer, mappedInput, epub,
