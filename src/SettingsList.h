@@ -79,6 +79,27 @@ inline bool settingKeyIs(const SettingInfo& setting, const char* key) {
   return setting.key && std::strcmp(setting.key, key) == 0;
 }
 
+inline bool isSideButtonActionSetting(const SettingInfo& setting) {
+  return settingKeyIs(setting, "sideButtonUpShort") || settingKeyIs(setting, "sideButtonUpLong") ||
+         settingKeyIs(setting, "sideButtonDownShort") || settingKeyIs(setting, "sideButtonDownLong");
+}
+
+inline std::string sideButtonOptionLabel(const SettingInfo& setting, const uint8_t displayIndex) {
+  if (isSideButtonActionSetting(setting) && displayIndex < setting.enumRawValues.size()) {
+    const uint8_t action = setting.enumRawValues[displayIndex];
+    if (action == CrossPointSettings::SIDE_ROTATE_COUNTERCLOCKWISE ||
+        action == CrossPointSettings::SIDE_ROTATE_CLOCKWISE) {
+      return std::string(tr(STR_ORIENTATION)) + " (" +
+             (action == CrossPointSettings::SIDE_ROTATE_CLOCKWISE ? tr(STR_DIR_RIGHT) : tr(STR_DIR_LEFT)) + ")";
+    }
+  }
+  return settingEnumOptionLabel(setting, displayIndex);
+}
+
+inline std::string sideButtonGroupLabel(const bool up) {
+  return std::string(up ? tr(STR_DIR_LEFT) : tr(STR_DIR_RIGHT)) + "/" + (up ? tr(STR_DIR_UP) : tr(STR_DIR_DOWN));
+}
+
 inline SettingInfo buildFontSizeSetting(const SdCardFontRegistry* registry) {
   if (registry && SETTINGS.sdFontFamilyName[0] != '\0') {
     const SdCardFontFamilyInfo* family = registry->findFamily(SETTINGS.sdFontFamilyName);
@@ -327,7 +348,7 @@ inline SettingInfo buildSleepScreenSetting() {
   return s;
 }
 
-enum class ShortcutOptionCatalog { PowerButton, ButtonChord, LongPress, HomeButton };
+enum class ShortcutOptionCatalog { PowerButton, ButtonChord, LongPress, HomeButton, SideButton };
 
 constexpr uint8_t SHORTCUT_OPTION_UNAVAILABLE = UINT8_MAX;
 
@@ -338,6 +359,7 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
 
   switch (catalog) {
     case ShortcutOptionCatalog::PowerButton:
+    case ShortcutOptionCatalog::SideButton:
       return static_cast<uint8_t>(action);
     case ShortcutOptionCatalog::ButtonChord:
       switch (action) {
@@ -523,6 +545,24 @@ inline SettingInfo buildHomeButtonActionSetting(const StrId nameId, uint8_t Cros
   return buildShortcutSetting(nameId, valuePtr, key, ShortcutOptionCatalog::HomeButton);
 }
 
+inline SettingInfo buildSideButtonActionSetting(const StrId nameId, uint8_t CrossPointSettings::* const valuePtr,
+                                                const char* const key) {
+  SettingInfo setting = buildShortcutSetting(nameId, valuePtr, key, ShortcutOptionCatalog::SideButton);
+  constexpr std::pair<CrossPointSettings::SIDE_BUTTON_ACTION, StrId> readerActions[] = {
+      {CrossPointSettings::SIDE_PREVIOUS_CHAPTER, StrId::STR_PREVIOUS_CHAPTER},
+      {CrossPointSettings::SIDE_NEXT_CHAPTER, StrId::STR_NEXT_CHAPTER},
+      {CrossPointSettings::SIDE_INCREASE_FONT, StrId::STR_INCREASE_FONT_SIZE},
+      {CrossPointSettings::SIDE_DECREASE_FONT, StrId::STR_DECREASE_FONT_SIZE},
+      {CrossPointSettings::SIDE_ROTATE_COUNTERCLOCKWISE, StrId::STR_LONG_PRESS_BEHAVIOR_ORIENTATION},
+      {CrossPointSettings::SIDE_ROTATE_CLOCKWISE, StrId::STR_LONG_PRESS_BEHAVIOR_ORIENTATION},
+  };
+  for (const auto& [action, label] : readerActions) {
+    setting.enumValues.push_back(label);
+    setting.enumRawValues.push_back(action);
+  }
+  return setting;
+}
+
 // Shared settings list used by both the device settings UI and the web settings API.
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
@@ -532,7 +572,7 @@ inline SettingInfo buildHomeButtonActionSetting(const StrId nameId, uint8_t Cros
 // can use it directly; mutable device UI lists use getSettingsList(), which
 // returns an owned copy and can add SD-card font and dictionary options.
 // Four edge gesture entries are compiled only for touch devices.
-inline constexpr size_t BASE_SETTINGS_CAPACITY = 103 + (CROSSINK_APP_CAP_TOUCH ? 4 : 0);
+inline constexpr size_t BASE_SETTINGS_CAPACITY = 104 + (CROSSINK_APP_CAP_TOUCH ? 4 : 0);
 
 inline const std::vector<SettingInfo>& getBaseSettingsList() {
   static const std::vector<SettingInfo> baseList = [] {
@@ -711,20 +751,16 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                           "rightEdgeDown", StrId::STR_CAT_CONTROLS)
             .withEnumRawValues(twoFingerSwipeActionValues));
 #endif
-    add(SettingInfo::Enum(StrId::STR_SIDE_BTN_LAYOUT, &CrossPointSettings::sideButtonLayout,
-                          {StrId::STR_DISABLED, StrId::STR_PREV_NEXT, StrId::STR_NEXT_PREV, StrId::STR_NEXT_NEXT},
-                          "sideButtonLayout", StrId::STR_CAT_CONTROLS)
-            .withEnumRawValues({CrossPointSettings::SIDE_BUTTONS_DISABLED, CrossPointSettings::PREV_NEXT,
-                                CrossPointSettings::NEXT_PREV, CrossPointSettings::NEXT_NEXT}));
     add(SettingInfo::Enum(StrId::STR_ORIENTATION_AWARE, &CrossPointSettings::sideButtonOrientationAware,
                           {StrId::STR_NO, StrId::STR_YES}, "sideButtonOrientationAware", StrId::STR_CAT_CONTROLS));
-    add(SettingInfo::Enum(StrId::STR_LONG_PRESS_ACTION, &CrossPointSettings::sideButtonLongPress,
-                          {StrId::STR_IGNORE, StrId::STR_CHAPTER_SKIP_OPT, StrId::STR_CHANGE_FONT_SIZE,
-                           StrId::STR_LONG_PRESS_BEHAVIOR_ORIENTATION},
-                          "sideButtonLongPress", StrId::STR_CAT_CONTROLS)
-            .withEnumRawValues({CrossPointSettings::SIDE_LONG_OFF, CrossPointSettings::SIDE_LONG_CHAPTER_SKIP,
-                                CrossPointSettings::SIDE_LONG_FONT_SIZE,
-                                CrossPointSettings::SIDE_LONG_ORIENTATION_CHANGE}));
+    add(buildSideButtonActionSetting(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::sideButtonUpShort,
+                                     "sideButtonUpShort"));
+    add(buildSideButtonActionSetting(StrId::STR_LONG_PRESS_ACTION, &CrossPointSettings::sideButtonUpLong,
+                                     "sideButtonUpLong"));
+    add(buildSideButtonActionSetting(StrId::STR_SHORT_PWR_BTN, &CrossPointSettings::sideButtonDownShort,
+                                     "sideButtonDownShort"));
+    add(buildSideButtonActionSetting(StrId::STR_LONG_PRESS_ACTION, &CrossPointSettings::sideButtonDownLong,
+                                     "sideButtonDownLong"));
     add(SettingInfo::Enum(StrId::STR_ORIENTATION_AWARE, &CrossPointSettings::frontButtonOrientationAware,
                           {StrId::STR_NO, StrId::STR_NAV_BUTTONS, StrId::STR_ALL_BUTTONS},
                           "frontButtonOrientationAware", StrId::STR_CAT_CONTROLS));
@@ -918,7 +954,7 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
     // Only show tilt page turn settings when the active device has a supported IMU.
     if (QuickActions::supportsTiltPageTurn()) {
       auto shortPowerButtonIt = std::find_if(
-          v.begin(), v.end(), [](const SettingInfo& setting) { return setting.nameId == StrId::STR_SHORT_PWR_BTN; });
+          v.begin(), v.end(), [](const SettingInfo& setting) { return settingKeyIs(setting, "shortPwrBtn"); });
       if (shortPowerButtonIt != v.end()) {
         auto insertPos = v.insert(shortPowerButtonIt + 1,
                                   SettingInfo::Toggle(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
@@ -939,7 +975,7 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
       }
     } else {
       for (auto& setting : v) {
-        if (setting.nameId == StrId::STR_SHORT_PWR_BTN || settingKeyIs(setting, "longPwrBtn")) {
+        if (settingKeyIs(setting, "shortPwrBtn") || settingKeyIs(setting, "longPwrBtn")) {
           removeEnumRawValue(setting, static_cast<uint8_t>(CrossPointSettings::TOGGLE_TILT_PAGE_TURN));
         } else if (setting.nameId == StrId::STR_LONG_PRESS_MENU_ACTION ||
                    setting.nameId == StrId::STR_LONG_PRESS_BACK_ACTION) {
@@ -973,7 +1009,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                  setting.valuePtr == &CrossPointSettings::longPwrBtn ||
                  setting.valuePtr == &CrossPointSettings::homeButtonTapAction ||
                  setting.valuePtr == &CrossPointSettings::homeButtonDoubleTapAction ||
-                 setting.valuePtr == &CrossPointSettings::homeButtonLongPressAction) {
+                 setting.valuePtr == &CrossPointSettings::homeButtonLongPressAction ||
+                 isSideButtonActionSetting(setting)) {
         removeEnumRawValue(setting, CrossPointSettings::READING_STATS);
       } else if (setting.valuePtr == &CrossPointSettings::powerChordAction ||
                  setting.valuePtr == &CrossPointSettings::sideButtonChordAction) {
@@ -1063,7 +1100,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                            }),
             v.end());
     for (auto& setting : v) {
-      if (setting.nameId == StrId::STR_SHORT_PWR_BTN || settingKeyIs(setting, "longPwrBtn")) {
+      if (settingKeyIs(setting, "shortPwrBtn") || settingKeyIs(setting, "longPwrBtn")) {
         removeEnumRawValue(setting, CrossPointSettings::TOGGLE_HOME_BUTTON_IN_READER);
       } else if (settingKeyIs(setting, "powerChordAction") || settingKeyIs(setting, "sideButtonChordAction")) {
         removeEnumRawValue(setting, shortcutRawValue(ShortcutOptionCatalog::ButtonChord,
@@ -1073,7 +1110,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
   }
   if (!Frontlight.present() || !gpio.hasTouch()) {
     for (auto& setting : v) {
-      if (setting.nameId != StrId::STR_SHORT_PWR_BTN && !settingKeyIs(setting, "longPwrBtn") &&
+      if (!settingKeyIs(setting, "shortPwrBtn") && !settingKeyIs(setting, "longPwrBtn") &&
           !settingKeyIs(setting, "powerChordAction") && !settingKeyIs(setting, "sideButtonChordAction")) {
         continue;
       }
@@ -1296,7 +1333,7 @@ inline std::vector<SettingInfo> buildControlsHomeButtonSettingsList(const std::v
 inline std::vector<SettingInfo> buildControlsPowerSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
   settings.reserve(4);
-  addSettingByName(settings, allSettings, StrId::STR_SHORT_PWR_BTN);
+  addSettingByKey(settings, allSettings, "shortPwrBtn");
   addSettingByKey(settings, allSettings, "longPwrBtn");
   if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FOOTNOTES ||
       SETTINGS.longPwrBtn == CrossPointSettings::SHORT_PWRBTN::FOOTNOTES ||
@@ -1324,13 +1361,17 @@ inline std::vector<SettingInfo> buildControlsFrontButtonSettingsList(const std::
 inline std::vector<SettingInfo> buildControlsSideButtonSettingsList(const std::vector<SettingInfo>& allSettings) {
   std::vector<SettingInfo> settings;
   const bool hasChord = hasSideButtonChordSetting(allSettings);
-  settings.reserve(3 + (hasChord ? 1u : 0u));
-  addSettingByName(settings, allSettings, StrId::STR_SIDE_BTN_LAYOUT);
+  settings.reserve(8 + (hasChord ? 1u : 0u));
   addSettingByKey(settings, allSettings, "sideButtonOrientationAware");
-  addSettingByKey(settings, allSettings, "sideButtonLongPress");
   if (hasChord) {
     addSettingByName(settings, allSettings, StrId::STR_SIDE_BUTTON_CHORD);
   }
+  settings.push_back(SettingInfo::SectionHeader(StrId::STR_DIR_LEFT));
+  addSettingByKey(settings, allSettings, "sideButtonUpShort");
+  addSettingByKey(settings, allSettings, "sideButtonUpLong");
+  settings.push_back(SettingInfo::SectionHeader(StrId::STR_DIR_RIGHT));
+  addSettingByKey(settings, allSettings, "sideButtonDownShort");
+  addSettingByKey(settings, allSettings, "sideButtonDownLong");
   return settings;
 }
 
