@@ -484,7 +484,7 @@ void BaseTheme::drawHeader(const GfxRenderer& renderer, Rect rect, const char* t
   // Shared detached headers use the same status row as Dashboard Home.
   const int16_t batteryY = [&] {
     if (batteryDetached && SETTINGS.uiTheme != CrossPointSettings::UI_THEME::ROUNDEDRAFF) {
-      return static_cast<int16_t>(UITheme::getTopStatusBarY(renderer) + homeHeaderTopInset);
+      return static_cast<int16_t>(rect.y + UITheme::getTopStatusBarInset(renderer) + homeHeaderTopInset);
     }
 
     // RoundedRaff's Home header is taller than ordinary headers. Shift compact

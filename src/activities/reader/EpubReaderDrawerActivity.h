@@ -27,7 +27,8 @@ class EpubReaderDrawerActivity final : public Activity {
  public:
   explicit EpubReaderDrawerActivity(
       GfxRenderer& renderer, MappedInputManager& mappedInput, std::shared_ptr<Epub> epub,
-      const EpubReaderPreviewModel* previewModel, float bookProgressPercent, bool hasFootnotes, bool hasDictionary,
+      const EpubReaderPreviewModel* previewModel, float bookProgressPercent, uint32_t chapterPage,
+      uint32_t chapterPageCount, bool chapterPageCountEstimated, bool hasFootnotes, bool hasDictionary,
       bool hasBookmarks, bool hasClippings, bool isCurrentPageBookmarked, bool isBookCompleted,
       bool showReadingPaceReset, uint32_t stableCurrentPage, uint32_t stablePageCount,
       uint16_t autoPageTurnIntervalSeconds, bool automaticPageTurnActive,
@@ -100,6 +101,9 @@ class EpubReaderDrawerActivity final : public Activity {
   // resetKeypadEntry() so backspacing everything or leaving and reopening the pane
   // shows the book's actual position again rather than an abandoned typed value.
   const int percentSeed = 0;
+  const uint32_t chapterPage = 0;
+  const uint32_t chapterPageCount = 0;
+  const bool chapterPageCountEstimated = false;
   const uint32_t stablePageSeed = 0;
   // Touch uses the Percent keypad directly. Button devices start on the slider
   // and can open this keypad by holding Confirm, as in the old selector.
@@ -188,6 +192,7 @@ class EpubReaderDrawerActivity final : public Activity {
   static void onKeypadBackspaceEvent(const freeink::ui::ActionEvent& event, void* user);
 
   void buildDrawer(UiApp::ScreenType& screen);
+  void drawButtonBookHeader();
   bool showsSamplePreview() const;
   void renderPreviewUnavailable();
   void renderSamplePreviewText(const ReaderSettingsDraft& settings, int fontId);

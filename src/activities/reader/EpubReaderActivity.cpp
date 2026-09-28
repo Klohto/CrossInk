@@ -2506,6 +2506,9 @@ void EpubReaderActivity::onExit() {
 
 void EpubReaderActivity::openReaderMenu() {
   clearPendingManualPageTurns();
+  int chapterPage = 0;
+  int chapterPageCount = 0;
+  bool chapterPageCountEstimated = false;
   int totalPages = 0;
   float bookProgress = 0.0f;
   uint16_t bmSpine;
@@ -2520,6 +2523,13 @@ void EpubReaderActivity::openReaderMenu() {
     RenderLock lock(*this);
     previewActive = activeFootnotePreview;
     totalPages = section ? section->estimatedTotalPages() : 0;
+    chapterPageCount = totalPages;
+    chapterPage = section ? section->currentPage + 1 : 0;
+    chapterPageCountEstimated = section && (section->isBuilding() || section->isPartial());
+    if (section && !previewActive) {
+      float chapterProgress = 0.0f;
+      resolveChapterGroupPageProgress(chapterPage, chapterPageCount, chapterProgress, chapterPageCountEstimated);
+    }
     bmSpine = static_cast<uint16_t>(currentSpineIndex);
     bmProgress = (section && totalPages > 0) ? static_cast<float>(section->currentPage) / totalPages : 0.0f;
     bookmarkPageCount = totalPages > 0 ? totalPages : 1;
@@ -2553,7 +2563,8 @@ void EpubReaderActivity::openReaderMenu() {
 #else
       nullptr,
 #endif
-      bookProgress, !previewActive && !currentPageFootnotes.empty(),
+      bookProgress, static_cast<uint32_t>(chapterPage), static_cast<uint32_t>(chapterPageCount),
+      chapterPageCountEstimated, !previewActive && !currentPageFootnotes.empty(),
       !previewActive && Dictionary::exists(epub->getCachePath().c_str()), !BOOKMARKS.getBookmarks().empty(),
       CLIPPINGS.hasClippings(), !previewActive && BOOKMARKS.hasBookmarkForPage(bmSpine, bmProgress, bookmarkPageCount),
       isBookCompleted,
@@ -4425,6 +4436,16 @@ bool EpubReaderActivity::getFrontlightPanelBookDetails(FrontlightPanelBookDetail
     details.chapter = epub->getTocItem(tocIndex).title;
   }
   details.progressPercent = clampPercent(static_cast<int>(getCurrentBookProgressPercent() + 0.5f));
+  int chapterPage = section ? section->currentPage + 1 : 0;
+  int chapterPageCount = section ? section->estimatedTotalPages() : 0;
+  bool chapterPageCountEstimated = section && (section->isBuilding() || section->isPartial());
+  if (section && !activeFootnotePreview) {
+    float chapterProgress = 0.0f;
+    resolveChapterGroupPageProgress(chapterPage, chapterPageCount, chapterProgress, chapterPageCountEstimated);
+  }
+  details.chapterPage = static_cast<uint32_t>(chapterPage);
+  details.chapterPageCount = static_cast<uint32_t>(chapterPageCount);
+  details.chapterPageCountEstimated = chapterPageCountEstimated;
   return true;
 }
 

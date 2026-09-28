@@ -88,9 +88,9 @@ FrontlightPanelContext buildFrontlightPanelContext(Activity& activity, GfxRender
     context.bookTitle = activity.getCurrentBookTitle();
     context.bookPath = currentPath;
     context.activeEpub = activity.isEpubReaderActivity() && currentEpubValid;
-    if (shouldShowStickyReaderDetails(hasStickyReaderDetailsPanel(), Frontlight.present(), context.activeReaderBook) &&
-        activity.getFrontlightPanelBookDetails(context.bookDetails)) {
-      context.showReaderDetails = true;
+    if (activity.getFrontlightPanelBookDetails(context.bookDetails)) {
+      context.showReaderDetails =
+          shouldShowStickyReaderDetails(hasStickyReaderDetailsPanel(), Frontlight.present(), context.activeReaderBook);
       context.bookTitle = context.bookDetails.title;
     }
     context.readingStatsActivity = activity.createFrontlightReadingStatsActivity();

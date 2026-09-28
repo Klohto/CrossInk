@@ -34,6 +34,7 @@
 #endif
 #include "components/DrawerHandle.h"
 #include "components/SliderValue.h"
+#include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
 #include "components/UiAppHelpers.h"
@@ -44,6 +45,7 @@
 #include "util/Dictionary.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FontFamilyLabel.h"
+#include "util/ReaderBookProgress.h"
 
 namespace fui = freeink::ui;
 
@@ -373,7 +375,8 @@ int indexForRaw(const std::array<uint8_t, N>& rawValues, const uint8_t value) {
 
 EpubReaderDrawerActivity::EpubReaderDrawerActivity(
     GfxRenderer& renderer, MappedInputManager& mappedInput, std::shared_ptr<Epub> epub,
-    const EpubReaderPreviewModel* previewModel, const float bookProgressPercent, const bool hasFootnotes,
+    const EpubReaderPreviewModel* previewModel, const float bookProgressPercent, const uint32_t chapterPage,
+    const uint32_t chapterPageCount, const bool chapterPageCountEstimated, const bool hasFootnotes,
     const bool hasDictionary, const bool hasBookmarks, const bool hasClippings, const bool isCurrentPageBookmarked,
     const bool isBookCompleted, const bool showReadingPaceReset, const uint32_t stableCurrentPage,
     const uint32_t stablePageCount, const uint16_t autoPageTurnIntervalSeconds, const bool automaticPageTurnActive,
@@ -397,6 +400,9 @@ EpubReaderDrawerActivity::EpubReaderDrawerActivity(
       stablePage(clampStablePage(stableCurrentPage, stablePageCount)),
       stablePageCount(stablePageCount),
       percentSeed(percent),
+      chapterPage(chapterPage),
+      chapterPageCount(chapterPageCount),
+      chapterPageCountEstimated(chapterPageCountEstimated),
       stablePageSeed(stablePage),
       hasFootnotes(hasFootnotes),
       hasDictionary(hasDictionary),
@@ -865,6 +871,11 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
     const fui::Rect sheetContent = screen.sheet(sheet, drawerHeight());
     drawerHandleRect = DrawerHandle::registerTap(screen.frame(), sheetContent, sheet, ACTION_DISMISS);
   }
+  if (buttonDevice) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    screen.takeTop(static_cast<int16_t>(metrics.topPadding + TouchHeaderBackButton::height(metrics, mappedInput) +
+                                        metrics.tabBarHeight));
+  }
   // Give every tab row four pixels of white space above and below its icons.
   // The tab pill keeps its previous size so the selected background does not
   // become taller with the row.
@@ -927,6 +938,22 @@ void EpubReaderDrawerActivity::buildDrawer(UiApp::ScreenType& screen) {
       buildSimplePane(screen);
       break;
   }
+}
+
+void EpubReaderDrawerActivity::drawButtonBookHeader() {
+  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const Rect header{safe.x, safe.y + metrics.topPadding, safe.width,
+                    TouchHeaderBackButton::height(metrics, mappedInput)};
+  GUI.drawHeader(renderer, header, epub ? epub->getTitle().c_str() : "", nullptr, false, true);
+
+  const Rect summary{safe.x, header.y + header.height, safe.width, metrics.tabBarHeight};
+  char progress[96];
+  formatReaderBookProgress(progress, sizeof(progress), chapterPage, chapterPageCount, chapterPageCountEstimated,
+                           percentSeed / 100);
+  GUI.drawSubHeader(renderer, summary, progress);
+  renderer.drawLine(summary.x, summary.y + summary.height - 1, summary.x + summary.width - 1,
+                    summary.y + summary.height - 1, 1, true);
 }
 
 void EpubReaderDrawerActivity::buildTabBar(UiApp::ScreenType& screen, const fui::Rect rect, const bool drawBottomRule) {
@@ -2787,11 +2814,13 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   }
   app.setDevice(uiTarget.deviceContext());
   app.render();
+  if (buttonDevice) drawButtonBookHeader();
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
     previewDirty = true;  // The full-screen UI cleared the sample area as well.
     previewRendered = renderPreview(previewFontId, previewPrewarmScope);
     if (showsSamplePreview() && previewUnavailable) {
       app.render();  // A failed font selection rolled the draft back; repaint its values too.
+      drawButtonBookHeader();
       renderPreviewUnavailable();
     }
   }

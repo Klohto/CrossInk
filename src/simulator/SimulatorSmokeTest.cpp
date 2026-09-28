@@ -850,8 +850,8 @@ class SimulatorSmokeTest {
 
       case SmokeStep::ReaderOptions:
         activityManager.replaceActivity(std::make_unique<EpubReaderDrawerActivity>(
-            renderer, mappedInputManager, std::shared_ptr<Epub>{}, nullptr, 0.0f, false, false, false, false, false,
-            false, false, 0, 0, 5, false));
+            renderer, mappedInputManager, std::shared_ptr<Epub>{}, nullptr, 0.0f, 0, 0, false, false, false, false,
+            false, false, false, false, 0, 0, 5, false));
         queueStep("Reader Menu", SmokeStep::ReaderMenu);
         break;
 
@@ -1070,9 +1070,8 @@ class SimulatorSmokeTest {
         inputScript.push_back(touchRelease(20, 8));
         inputScript.push_back(render("Frontlight Panel remains open after in-drawer swipe up", 4));
         inputScript.push_back(assertActivity("FrontlightPanel"));
-        // X4 Pro's portrait frontlight sheet ends just below mid-screen; this
-        // point lands in its centered 29 px handle band.
-        inputScript.push_back(touchDown(width / 2, height * 21 / 40));
+        // The book-progress row puts the portrait sheet's handle near 58% height.
+        inputScript.push_back(touchDown(width / 2, height * 23 / 40));
         inputScript.push_back(touchMove(width / 2, 8));
         inputScript.push_back(touchRelease(width / 2, 8));
         inputScript.push_back(render("Reader restored after Frontlight Panel handle drag up", 4));
@@ -1084,8 +1083,8 @@ class SimulatorSmokeTest {
         inputScript.push_back(assertActivity("FrontlightPanel"));
         // The fourth action-bar slot opens Global Settings through the real
         // FrontlightPanelActivity callback path.
-        inputScript.push_back(touchDown(width * 7 / 10, height * 15 / 32));
-        inputScript.push_back(touchRelease(width * 7 / 10, height * 15 / 32));
+        inputScript.push_back(touchDown(width * 7 / 10, height * 21 / 40));
+        inputScript.push_back(touchRelease(width * 7 / 10, height * 21 / 40));
         inputScript.push_back(render("Global Settings opened from Frontlight Panel", 4));
         inputScript.push_back(assertActivity("Settings"));
         inputScript.push_back(touchDown(width / 2, height * 3 / 4));
@@ -1103,8 +1102,8 @@ class SimulatorSmokeTest {
         inputScript.push_back(touchRelease(width / 2, height / 4));
         inputScript.push_back(render("Frontlight Panel reopened after Global Settings", 4));
         inputScript.push_back(assertActivity("FrontlightPanel"));
-        inputScript.push_back(touchDown(width * 3 / 10, height * 3 / 8));
-        inputScript.push_back(touchRelease(width * 3 / 10, height * 3 / 8));
+        inputScript.push_back(touchDown(width * 3 / 10, height * 21 / 40));
+        inputScript.push_back(touchRelease(width * 3 / 10, height * 21 / 40));
         inputScript.push_back(render("Sync dialog opened from Frontlight Panel", 4));
         inputScript.push_back(assertActivity("FrontlightPanel"));
         inputScript.push_back(touchDown(width / 2, height - 60));
