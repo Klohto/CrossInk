@@ -46,6 +46,7 @@
 - Screenshot folder names keep complete non-English characters when shortened.
 - Longer power-on instructions wrap on the finished update screen.
 - Sticky now records periodic heap and PSRAM statistics over its ROM logging path.
+- RTL EPUBs use reading-order swipe and tap directions.
 
 ## [v1.6.0] - 2026-09-21
 
