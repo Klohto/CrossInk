@@ -1193,6 +1193,8 @@ constexpr std::array<uint8_t ReaderSettingsSnapshot::*, 18> READER_SETTING_FIELD
 constexpr uint32_t SD_FONT_FAMILY_OVERRIDE = 1U << READER_SETTING_FIELDS.size();
 constexpr uint32_t ALL_READER_SETTING_OVERRIDES = (SD_FONT_FAMILY_OVERRIDE << 1) - 1;
 constexpr uint32_t READER_FONT_OVERRIDES = (1U << 0) | (1U << 1) | SD_FONT_FAMILY_OVERRIDE;
+// Anti-aliasing changes the page drawing, but not its saved line/page layout.
+constexpr uint32_t READER_LAYOUT_SETTING_OVERRIDES = ALL_READER_SETTING_OVERRIDES & ~(1U << 11);
 constexpr uint32_t SAFE_MODE_SETTING_OVERRIDES = (1U << 9) | (1U << 15) | (1U << 16);
 
 uint32_t changedReaderSettingsMask(const ReaderSettingsSnapshot& current, const ReaderSettingsSnapshot& global) {
@@ -2213,7 +2215,9 @@ bool EpubReaderActivity::beginGlobalSettingsEdit() {
 }
 
 void EpubReaderActivity::endGlobalSettingsEdit() {
-  if (bookReaderSettingsSuspendedForGlobalEdit) {
+  uint32_t effectiveChanges = 0;
+  const bool restoreBookFont = bookReaderSettingsSuspendedForGlobalEdit;
+  if (restoreBookFont) {
     // Global Settings is editing SETTINGS while the book-specific reader values
     // are suspended. Retain every edited reader default before restoring this
     // book, otherwise the stale snapshot is written back on a later save or
@@ -2237,14 +2241,21 @@ void EpubReaderActivity::endGlobalSettingsEdit() {
       SETTINGS.epubRenderMode = normalizeRenderModeRaw(suspendedBookReaderSettings.epubRenderMode);
     }
     captureReaderSettings(initialBookReaderSettings.readerSettings);
+    effectiveChanges = changedReaderSettingsMask(initialBookReaderSettings.readerSettings, suspendedBookReaderSettings);
     bookReaderSettingsSuspendedForGlobalEdit = false;
   }
-  // Bar edits change the reading viewport even when the book's font settings do not.
-  // Rebuild the active section immediately so it cannot keep pages laid out for
-  // the previous top/bottom reservations.
-  const ReaderViewportLayout layout = computeReaderViewportLayout(renderer, automaticPageTurnActive);
-  if (section && (layout.viewportWidth != buildViewportWidth || layout.viewportHeight != buildViewportHeight)) {
-    RenderLock lock(*this);
+
+  RenderLock lock(*this);
+  // The global font picker may have unloaded this book's SD font even when
+  // its override kept the effective font setting unchanged.
+  if (restoreBookFont) ensureReaderSdFontLoaded(renderer);
+  ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
+  const ReaderViewportLayout layout = computeReaderViewportLayout(
+      renderer, automaticPageTurnActive, activeFootnotePreview || !pendingFootnotePreviewAnchor.empty());
+  // Reflow only when this book's effective layout changed. Its per-book fields
+  // stay protected, while inherited global fields and status-bar space update.
+  if (section && ((effectiveChanges & READER_LAYOUT_SETTING_OVERRIDES) || layout.viewportWidth != buildViewportWidth ||
+                  layout.viewportHeight != buildViewportHeight)) {
     prepareCurrentSectionForRelayout();
     section.reset();
   }
