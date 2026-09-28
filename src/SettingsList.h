@@ -531,7 +531,7 @@ inline SettingInfo buildHomeButtonActionSetting(const StrId nameId, uint8_t Cros
 // can use it directly; mutable device UI lists use getSettingsList(), which
 // returns an owned copy and can add SD-card font and dictionary options.
 // Four edge gesture entries are compiled only for touch devices.
-inline constexpr size_t BASE_SETTINGS_CAPACITY = 102 + (CROSSINK_APP_CAP_TOUCH ? 4 : 0);
+inline constexpr size_t BASE_SETTINGS_CAPACITY = 103 + (CROSSINK_APP_CAP_TOUCH ? 4 : 0);
 
 inline const std::vector<SettingInfo>& getBaseSettingsList() {
   static const std::vector<SettingInfo> baseList = [] {
@@ -801,10 +801,8 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                            {CrossPointSettings::MIN_READING_IDLE_TIME_THRESHOLD_UNITS,
                             CrossPointSettings::MAX_READING_IDLE_TIME_THRESHOLD_UNITS, 1},
                            "readingIdleTimeThresholdUnits", StrId::STR_CAT_SYSTEM));
-#ifdef CROSSINK_ENABLE_READING_STATS_TOGGLE
     add(SettingInfo::Toggle(StrId::STR_TRACK_READING_STATS, &CrossPointSettings::trackReadingStats, "trackReadingStats",
                             StrId::STR_CAT_SYSTEM));
-#endif
 
     // Frontlight quick-panel state: persisted + web-exposed, category-less so
     // it stays off the Settings screen (edited from the swipe-down panel).
@@ -965,6 +963,27 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
 inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr,
                                                 const DictionaryRegistry* dictRegistry = nullptr) {
   std::vector<SettingInfo> v = getBaseSettingsList();
+  if (!SETTINGS.shouldTrackReadingStats()) {
+    for (auto& setting : v) {
+      if (setting.valuePtr == &CrossPointSettings::sleepScreen) {
+        removeEnumRawValue(setting, static_cast<uint8_t>(CrossPointSettings::READING_STATS_SLEEP));
+        removeEnumRawValue(setting, static_cast<uint8_t>(CrossPointSettings::MINIMAL_STATS_SLEEP));
+      } else if (setting.valuePtr == &CrossPointSettings::shortPwrBtn ||
+                 setting.valuePtr == &CrossPointSettings::longPwrBtn ||
+                 setting.valuePtr == &CrossPointSettings::homeButtonTapAction ||
+                 setting.valuePtr == &CrossPointSettings::homeButtonDoubleTapAction ||
+                 setting.valuePtr == &CrossPointSettings::homeButtonLongPressAction) {
+        removeEnumRawValue(setting, CrossPointSettings::READING_STATS);
+      } else if (setting.valuePtr == &CrossPointSettings::powerChordAction ||
+                 setting.valuePtr == &CrossPointSettings::sideButtonChordAction) {
+        removeEnumRawValue(setting,
+                           shortcutRawValue(ShortcutOptionCatalog::ButtonChord, CrossPointSettings::READING_STATS));
+      } else if (setting.valuePtr == &CrossPointSettings::longPressMenuAction ||
+                 setting.valuePtr == &CrossPointSettings::longPressBackAction) {
+        removeEnumRawValue(setting, static_cast<uint8_t>(CrossPointSettings::LONG_MENU_READING_STATS));
+      }
+    }
+  }
   const bool hasTouch = gpio.hasTouch();
   if (!hasTouch) {
     v.erase(std::remove_if(v.begin(), v.end(),
@@ -1433,6 +1452,7 @@ inline std::vector<SettingInfo> buildSystemReadingStatsSettingsList(const std::v
   std::vector<SettingInfo> settings;
   settings.reserve(3);
   addSettingByName(settings, allSettings, StrId::STR_TRACK_READING_STATS);
+  if (!SETTINGS.shouldTrackReadingStats()) return settings;
   settings.push_back(SettingInfo::Submenu(StrId::STR_ALL_TIME_STATS, SettingAction::SystemGlobalStats));
   addSettingByName(settings, allSettings, StrId::STR_IDLE_TIME_THRESHOLD);
   return settings;

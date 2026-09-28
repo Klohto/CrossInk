@@ -378,8 +378,9 @@ EpubReaderDrawerActivity::EpubReaderDrawerActivity(
     const EpubReaderPreviewModel* previewModel, const float bookProgressPercent, const uint32_t chapterPage,
     const uint32_t chapterPageCount, const bool chapterPageCountEstimated, const bool hasFootnotes,
     const bool hasDictionary, const bool hasBookmarks, const bool hasClippings, const bool isCurrentPageBookmarked,
-    const bool isBookCompleted, const bool showReadingPaceReset, const uint32_t stableCurrentPage,
-    const uint32_t stablePageCount, const uint16_t autoPageTurnIntervalSeconds, const bool automaticPageTurnActive,
+    const bool isBookCompleted, const bool showReadingPaceReset, const bool globalStatsEnabled,
+    const bool bookStatsEnabled, const uint32_t stableCurrentPage, const uint32_t stablePageCount,
+    const uint16_t autoPageTurnIntervalSeconds, const bool automaticPageTurnActive,
     ReaderOptionsActivity::SaveSettingsCallback saveReaderSettingsCallback, void* saveReaderSettingsContext,
     ReaderOptionsActivity::SaveGlobalSettingsCallback saveGlobalSettingsCallback, void* saveGlobalSettingsContext,
     ReaderOptionsActivity::GlobalSettingsEditCallback beginGlobalSettingsEditCallback,
@@ -408,6 +409,8 @@ EpubReaderDrawerActivity::EpubReaderDrawerActivity(
       hasDictionary(hasDictionary),
       hasBookmarks(hasBookmarks),
       hasClippings(hasClippings),
+      globalStatsEnabled(globalStatsEnabled),
+      bookStatsEnabled(bookStatsEnabled),
       isCurrentPageBookmarked(isCurrentPageBookmarked),
       isBookCompleted(isBookCompleted),
       showReadingPaceReset(showReadingPaceReset),
@@ -445,9 +448,9 @@ void EpubReaderDrawerActivity::onEnter() {
   Activity::onEnter();
   if (mappedInput.hasTouchHardware()) mappedInput.setReaderTouchscreenOverride(true);
 
-  const ReaderDrawerCatalog catalog =
-      makeReaderDrawerCatalog({hasFootnotes, hasDictionary, hasBookmarks, hasClippings, showReadingPaceReset,
-                               stablePageCount > 0, !mappedInput.hasTouchHardware()});
+  const ReaderDrawerCatalog catalog = makeReaderDrawerCatalog(
+      {hasFootnotes, hasDictionary, hasBookmarks, hasClippings, showReadingPaceReset, stablePageCount > 0,
+       !mappedInput.hasTouchHardware(), globalStatsEnabled, bookStatsEnabled});
   for (size_t tab = 0; tab < rootRows.size(); ++tab) {
     rootRows[tab].reserve(catalog[tab].count);
     rootRows[tab].assign(catalog[tab].items.begin(), catalog[tab].items.begin() + catalog[tab].count);
@@ -1753,6 +1756,9 @@ void EpubReaderDrawerActivity::activateRow(const RowId row) {
       isBookCompleted = !isBookCompleted;
       closeAndReturn(false, EpubReaderMenuAction::TOGGLE_COMPLETED);
       return;
+    case RowId::TrackBookStats:
+      closeAndReturn(false, EpubReaderMenuAction::TOGGLE_BOOK_STATS_TRACKING, true);
+      return;
     case RowId::DeleteBookmarks:
       closeAndReturn(false, EpubReaderMenuAction::DELETE_BOOKMARKS);
       return;
@@ -2970,6 +2976,8 @@ const char* EpubReaderDrawerActivity::rowLabel(const RowId row) const {
       return tr(STR_INDEXING_METHOD);
     case RowId::ToggleCompleted:
       return isBookCompleted ? tr(STR_MARK_UNFINISHED) : tr(STR_MARK_FINISHED);
+    case RowId::TrackBookStats:
+      return tr(STR_TRACK_READING_STATS);
     case RowId::Controls:
       return tr(STR_CAT_CONTROLS);
     case RowId::ResetReadingPace:
@@ -3090,6 +3098,7 @@ const char* EpubReaderDrawerActivity::rowValue(const RowId row, char* buffer, co
 
 bool EpubReaderDrawerActivity::rowIsToggle(const RowId row) const {
   switch (row) {
+    case RowId::TrackBookStats:
     case RowId::TextAa:
     case RowId::Focus:
     case RowId::GuideDots:
@@ -3134,6 +3143,8 @@ bool EpubReaderDrawerActivity::rowShowsNavigationCaret(const RowId row) const {
 
 bool EpubReaderDrawerActivity::rowToggleValue(const RowId row) const {
   switch (row) {
+    case RowId::TrackBookStats:
+      return bookStatsEnabled;
     case RowId::TextAa:
       return draft.textAntiAliasing;
     case RowId::Focus:

@@ -16,6 +16,7 @@
 #include <algorithm>
 
 #include "BookStatsActivity.h"
+#include "BookStatsTracking.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "GlobalActions.h"
@@ -123,6 +124,10 @@ void XtcReaderActivity::onEnter() {
 
   stats = BookReadingStats::load(xtc->getCachePath());
   globalStats = GlobalReadingStats::load();
+  bookStatsEnabled = BookStatsTracking::isBookEnabled(xtc->getCachePath());
+  statsTrackingActive = SETTINGS.shouldTrackReadingStats() && bookStatsEnabled;
+  paceDirty = false;
+  pendingStatsCommit = false;
   sessionReadingSeconds = 0;
   hasSessionStartLocalDateTime = getCurrentLocalReadingStatsDateTime(sessionStartLocalDateTime);
 
@@ -151,6 +156,7 @@ void XtcReaderActivity::onExit() {
   APP_STATE.readerActivityLoadCount = 0;
   APP_STATE.saveToFile();
 
+  syncStatsTrackingState();
   commitReadingStats();
 
   // Generate carousel thumbnails while XTC is still loaded so the home screen
@@ -178,7 +184,8 @@ void XtcReaderActivity::openReaderMenu() {
 
   pauseReadingStatsTimer("reader_menu");
   startActivityForResult(
-      std::make_unique<XtcReaderMenuActivity>(renderer, mappedInput, std::move(title), hasChapters, stats.isCompleted),
+      std::make_unique<XtcReaderMenuActivity>(renderer, mappedInput, std::move(title), hasChapters, stats.isCompleted,
+                                              SETTINGS.shouldTrackReadingStats(), bookStatsEnabled),
       [this](const ActivityResult& result) {
         const auto* menu = std::get_if<MenuResult>(&result.data);
         if (result.isCancelled || menu == nullptr) {
@@ -194,6 +201,7 @@ void XtcReaderActivity::loop() {
   if (!xtc) {
     return;
   }
+  syncStatsTrackingState();
   if (quickActionsPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
 
   const bool shortcutPageTurn = shortcutPageTurnPending;
@@ -601,6 +609,23 @@ void XtcReaderActivity::pauseReadingStatsTimer(const char* source) {
   pageShownAtMs = 0UL;
 }
 
+void XtcReaderActivity::syncStatsTrackingState() {
+  if (!xtc) return;
+  const bool active = SETTINGS.shouldTrackReadingStats() && bookStatsEnabled;
+  if (active == statsTrackingActive) return;
+  if (statsTrackingActive && !active) {
+    pendingStatsCommit = true;
+    if (stats.save(xtc->getCachePath())) {
+      globalStats.save();
+      pendingStatsCommit = false;
+    }
+  }
+  statsTrackingActive = active;
+  sessionReadingSeconds = 0;
+  hasSessionStartLocalDateTime = getCurrentLocalReadingStatsDateTime(sessionStartLocalDateTime);
+  pageShownAtMs = millis();
+}
+
 void XtcReaderActivity::resumeReadingStatsTimer(const char*) {
   if (xtc && currentPage < xtc->getPageCount()) {
     pageShownAtMs = millis();
@@ -660,7 +685,7 @@ bool XtcReaderActivity::handleQuickLockUnlock(const QuickLockTrigger trigger) {
 
 bool XtcReaderActivity::currentPageReadingSecondsForStats(uint32_t& seconds, const char* source) const {
   seconds = 0;
-  if (!SETTINGS.shouldTrackReadingStats() || pageShownAtMs == 0UL) {
+  if (!statsTrackingActive || pageShownAtMs == 0UL) {
     return false;
   }
 
@@ -681,7 +706,7 @@ bool XtcReaderActivity::currentPageReadingSecondsForStats(uint32_t& seconds, con
 
 bool XtcReaderActivity::forwardPageReadElapsed(uint32_t& seconds, const char*) const {
   seconds = 0;
-  if (!SETTINGS.shouldTrackReadingStats() || pageShownAtMs == 0UL) {
+  if (pageShownAtMs == 0UL) {
     return false;
   }
 
@@ -710,9 +735,12 @@ void XtcReaderActivity::recordCurrentPageReadingTime(const char* source) {
 void XtcReaderActivity::recordForwardPageTurn(const uint32_t seconds, const bool recordPace) {
   if (recordPace) {
     stats.recordForwardPageRead(seconds);
+    paceDirty = true;
   }
-  stats.totalPagesTurned++;
-  globalStats.totalPagesTurned++;
+  if (statsTrackingActive) {
+    stats.totalPagesTurned++;
+    globalStats.totalPagesTurned++;
+  }
 }
 
 bool XtcReaderActivity::formatTimeLeftLabel(char* buf, const size_t len, const uint32_t pageToRender,
@@ -739,17 +767,16 @@ bool XtcReaderActivity::formatTimeLeftLabel(char* buf, const size_t len, const u
 }
 
 void XtcReaderActivity::commitReadingStats() {
-  if (!xtc || !SETTINGS.shouldTrackReadingStats()) {
+  if (!xtc) {
     return;
   }
-
-  recordCurrentPageReadingTime("reader_exit");
+  if (statsTrackingActive) recordCurrentPageReadingTime("reader_exit");
   const uint32_t elapsedSecs = sessionReadingSeconds;
-  if (elapsedSecs >= 60) {
+  if (statsTrackingActive && elapsedSecs >= 60) {
     stats.sessionCount++;
     globalStats.totalSessions++;
   }
-  if (elapsedSecs >= 10) {
+  if (statsTrackingActive && elapsedSecs >= 10) {
     stats.totalReadingSeconds += elapsedSecs;
     globalStats.totalReadingSeconds += elapsedSecs;
     if (hasSessionStartLocalDateTime) {
@@ -760,8 +787,9 @@ void XtcReaderActivity::commitReadingStats() {
       stats.startDate = sessionStartLocalDateTime.date;
     }
   }
-  stats.save(xtc->getCachePath());
-  globalStats.save();
+  if (statsTrackingActive || paceDirty || pendingStatsCommit) {
+    if (stats.save(xtc->getCachePath()) && (statsTrackingActive || pendingStatsCommit)) globalStats.save();
+  }
 }
 
 void XtcReaderActivity::resetCurrentBookStatsAfterDelete() {
@@ -776,21 +804,21 @@ void XtcReaderActivity::setBookCompleted(const bool isCompleted) {
   }
 
   stats.isCompleted = isCompleted;
-  if (isCompleted && !stats.finishedDateManual) {
+  if (isCompleted && statsTrackingActive && !stats.finishedDateManual) {
     ReadingStatsDateTime now;
     if (getCurrentLocalReadingStatsDateTime(now)) {
       stats.finishedDate = now.date;
     }
   }
 
-  if (isCompleted) {
-    globalStats.completedBooks++;
-  } else if (globalStats.completedBooks > 0) {
-    globalStats.completedBooks--;
+  if (stats.save(xtc->getCachePath()) && statsTrackingActive) {
+    if (isCompleted) {
+      globalStats.completedBooks++;
+    } else if (globalStats.completedBooks > 0) {
+      globalStats.completedBooks--;
+    }
+    globalStats.save();
   }
-
-  stats.save(xtc->getCachePath());
-  globalStats.save();
 }
 
 float XtcReaderActivity::getCurrentBookProgressPercent() const {
@@ -818,10 +846,10 @@ bool XtcReaderActivity::getFrontlightPanelBookDetails(FrontlightPanelBookDetails
 }
 
 std::unique_ptr<Activity> XtcReaderActivity::createFrontlightReadingStatsActivity() {
-  if (!xtc) return {};
+  if (!xtc || !statsTrackingActive) return {};
 
   BookReadingStats displayStats = stats;
-  if (SETTINGS.shouldTrackReadingStats()) {
+  if (statsTrackingActive) {
     displayStats.totalReadingSeconds = displayStats.totalReadingSeconds > UINT32_MAX - sessionReadingSeconds
                                            ? UINT32_MAX
                                            : displayStats.totalReadingSeconds + sessionReadingSeconds;
@@ -878,6 +906,7 @@ void XtcReaderActivity::openChapterSelection() {
 }
 
 void XtcReaderActivity::openReadingStats() {
+  if (!statsTrackingActive) return;
   auto bookStats = createFrontlightReadingStatsActivity();
   if (!bookStats) {
     resumeReadingStatsTimer("book_stats_no_book");
@@ -952,13 +981,26 @@ void XtcReaderActivity::onReaderMenuConfirm(const int action) {
     case XtcReaderMenuActivity::MenuAction::READING_STATS:
       openReadingStats();
       break;
+    case XtcReaderMenuActivity::MenuAction::TOGGLE_BOOK_STATS_TRACKING:
+      if (xtc && SETTINGS.shouldTrackReadingStats()) {
+        const bool enabled = !bookStatsEnabled;
+        if (!BookStatsTracking::setBookEnabled(xtc->getCachePath(), enabled)) {
+          drawToast(renderer, (std::string(tr(STR_TRACK_READING_STATS)) + " " + tr(STR_FAILED_LOWER)).c_str());
+          delay(1000);
+        }
+        bookStatsEnabled = BookStatsTracking::isBookEnabled(xtc->getCachePath());
+        syncStatsTrackingState();
+      }
+      resumeReadingStatsTimer("toggle_book_stats_return");
+      requestUpdate();
+      break;
     case XtcReaderMenuActivity::MenuAction::TOGGLE_COMPLETED:
       setBookCompleted(!stats.isCompleted);
       resumeReadingStatsTimer("toggle_completed_return");
       requestUpdate();
       break;
     case XtcReaderMenuActivity::MenuAction::DELETE_STATS:
-      deleteBookStats();
+      if (statsTrackingActive) deleteBookStats();
       break;
     case XtcReaderMenuActivity::MenuAction::DELETE_CACHE:
       deleteBookCache();

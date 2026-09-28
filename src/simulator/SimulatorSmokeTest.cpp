@@ -851,7 +851,7 @@ class SimulatorSmokeTest {
       case SmokeStep::ReaderOptions:
         activityManager.replaceActivity(std::make_unique<EpubReaderDrawerActivity>(
             renderer, mappedInputManager, std::shared_ptr<Epub>{}, nullptr, 0.0f, 0, 0, false, false, false, false,
-            false, false, false, false, 0, 0, 5, false));
+            false, false, false, false, true, true, 0, 0, 5, false));
         queueStep("Reader Menu", SmokeStep::ReaderMenu);
         break;
 

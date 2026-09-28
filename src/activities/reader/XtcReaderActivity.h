@@ -33,6 +33,10 @@ class XtcReaderActivity final : public Activity {
   GlobalReadingStats globalStats;
   ReadingStatsDateTime sessionStartLocalDateTime;
   bool hasSessionStartLocalDateTime = false;
+  bool bookStatsEnabled = true;
+  bool statsTrackingActive = true;
+  bool paceDirty = false;
+  bool pendingStatsCommit = false;
   bool longPowerPageTurnHandled = false;
   // Home-key shortcuts are dispatched before this activity's normal input loop.
   // Queue the turn so it follows the same guarded XTC page-turn path.
@@ -64,6 +68,7 @@ class XtcReaderActivity final : public Activity {
   bool flushQueuedProgress();
   void loadProgress();
   void pauseReadingStatsTimer(const char* source = "unknown");
+  void syncStatsTrackingState();
   void resumeReadingStatsTimer(const char* source = "unknown");
   bool currentPageReadingSecondsForStats(uint32_t& seconds, const char* source) const;
   bool forwardPageReadElapsed(uint32_t& seconds, const char* source) const;

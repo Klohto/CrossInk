@@ -665,10 +665,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   char deviceName[21] = "";
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
   uint8_t quickResumeSleepScreen = QUICK_RESUME_NEVER;
-#ifdef CROSSINK_ENABLE_READING_STATS_TOGGLE
-  // Debug/test builds can disable stat writes so navigation tests do not affect personal reading stats.
+  // Master switch for automatic reading statistics; Time Left pace remains independent.
   uint8_t trackReadingStats = 1;
-#endif
 
   ~CrossPointSettings() = default;
 
@@ -709,13 +707,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
            bottomReaderStatusBar.contains(ReaderStatusBarItem::Clock);
   }
   bool shouldShowClockOutsideReader() const { return showClockOutsideReader != 0; }
-  bool shouldTrackReadingStats() const {
-#ifdef CROSSINK_ENABLE_READING_STATS_TOGGLE
-    return trackReadingStats != 0;
-#else
-    return true;
-#endif
-  }
+  bool shouldTrackReadingStats() const { return trackReadingStats != 0; }
   static const char* getDefaultDeviceName();
   const char* getEffectiveDeviceName() const;
   uint16_t getReadingIdleTimeThresholdSeconds() const;

@@ -174,8 +174,13 @@ class EpubReaderActivity final : public Activity {
   ReaderSettingsSnapshot suspendedBookReaderSettings;
   BookReadingStats stats;
   GlobalReadingStats globalStats;
+  bool bookStatsEnabled = true;
+  bool statsTrackingActive = true;
+  bool paceDirty = false;
+  bool pendingStatsCommit = false;
   ReadingStatsDateTime sessionStartLocalDateTime;
   bool hasSessionStartLocalDateTime = false;
+  void syncStatsTrackingState();
   // Signals that the next render should reposition within the newly loaded section
   // based on a cross-book percentage jump.
   bool pendingPercentJump = false;

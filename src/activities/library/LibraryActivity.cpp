@@ -990,6 +990,15 @@ void LibraryActivity::showBookActionMenu(const size_t bookIndex, const bool igno
                }
 
                switch (static_cast<FileBrowserAction>(actionResult->action)) {
+                 case FileBrowserAction::ToggleBookStatsTracking: {
+                   bool enabled = false;
+                   if (!BookActions::toggleBookStatsTracking(book.path, enabled)) {
+                     const std::string error = std::string(tr(STR_TRACK_READING_STATS)) + " " + tr(STR_FAILED_LOWER);
+                     BookActions::drawToast(renderer, error.c_str());
+                   }
+                   reloadAfterBookAction();
+                   return;
+                 }
                  case FileBrowserAction::ReadingStats:
                    openDialog(BookActions::createReadingStatsActivity(renderer, mappedInput, book.path, book.title),
                               [this](const ActivityResult&) { requestUpdate(); });
