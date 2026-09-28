@@ -2850,11 +2850,12 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
     } else if (state.pane == ReaderDrawerPane::Root && !buttonFocusActive) {
       confirmLabel = tr(STR_NEXT_FIELD);
     }
-    const bool fineAdjustment = state.pane == ReaderDrawerPane::AutoPageTurn ||
+    const bool fineAdjustment = (state.pane == ReaderDrawerPane::Percent && !percentKeypadActive) ||
+                                state.pane == ReaderDrawerPane::AutoPageTurn ||
                                 (readerDrawerStepChangesSettings(state.pane) && buttonSliderState.editing);
     const char* previousLabel = tr(STR_DIR_UP);
     const char* nextLabel = tr(STR_DIR_DOWN);
-    if (state.pane == ReaderDrawerPane::Percent) {
+    if (state.pane == ReaderDrawerPane::Percent && percentKeypadActive) {
       previousLabel = tr(STR_DIR_LEFT);
       nextLabel = tr(STR_DIR_RIGHT);
     } else if (fineAdjustment) {
