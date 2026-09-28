@@ -24,6 +24,7 @@
 - EPUB reader menus now share five tabs across devices. Button devices gain live font and margin previews, Reading Stats, and in-book transfer options.
 - Brightness and warmth gestures now adjust in one-point steps for finer control.
 - The on-screen keyboard now uses wider outlined keys with clearer spacing on touch and button devices.
+- Long status titles shorten faster when they do not fit the screen.
 
 ### Fixed
 
