@@ -93,8 +93,7 @@ Alternatively, while reading a book, press the **Confirm** button to open the re
 
 ### Power On / Off
 
-To turn the device on or off, **press and hold the Power button for approximately half a second**.
-In **Settings > Controls > Power Button** you can configure the power button to turn the device off with a short press instead of a long one.
+By default, **press and hold the Power button for approximately half a second** to put the device to sleep or wake it. In **Settings > Controls > Power Button**, you can configure the short-press and long-press actions separately. A short press wakes the device only when **Short-press Action** is set to **Sleep/Wake** or **Wake**; otherwise, hold Power for about half a second to wake it. See [Controls](#363-controls) for details.
 
 To reboot the device (for example after a firmware update or if it's frozen), press and release the Reset button, and then quickly press and hold the Power button for a few seconds.
 
@@ -339,7 +338,7 @@ which status-bar items are shown.
 
 #### 3.6.3 Controls
 
-- **Power Button**: Configure short-press and long-press power button actions.
+- **Power Button**: Configure short-press and long-press actions independently. On supported devices, you can also configure the **Power + Up** shortcut.
 
 - **Front Buttons**: Configure front-button remapping, orientation awareness,
   reader-only long-press behavior, Back action, and Menu action.
@@ -352,14 +351,16 @@ which status-bar items are shown.
 
 - **Side Button Long-press Action**: Set whether long-pressing side buttons does nothing, skips chapters, changes font size, or changes orientation.
 
-- **Short-press Action / Long-press Action**: Controls the effect of a short or long press of the power button. Available actions include:
-  - "Ignore" (default) - Require a long press to turn off the device
-  - "Sleep" - A short press puts the device into sleep mode
-  - "Page Turn" - A short press in reading mode turns to the next page; a long press turns the device off
+- **Short-press Action / Long-press Action**: Choose what a short press or a hold of about 0.4 seconds does. Available actions include:
+  - "Ignore" (default short-press action) - Do nothing for this press length
+  - "Sleep/Wake" (default long-press action) - Put the awake device to sleep; when selected as **Short-press Action**, also allow a short press to wake it
+  - "Sleep" - Put the awake device to sleep without enabling short-press wake
+  - "Wake" - When selected as **Short-press Action**, allow a short press to wake the device; does nothing while the device is awake
+  - "Page Turn" - Turn to the next page while reading
   - "Toggle Bookmark", "Reading Stats", "Mark Finished", "Refresh", "Change Font", "Guide Dots", "Focus Reading", "Auto Page Turn", "Sync Progress", "File Transfer", "Calibre Wireless", "Join a Network", "Create Hotspot", "Screenshot", "Dark Mode", "Browse Files", or "Save Clipping" - Run the matching action
   - "Footnotes" - A short press in reading mode opens the footnotes submenu; if only one footnote is present on the page, the referenced page is opened directly. The short press on the power button can be used to select the footnote in the submenu, and to go back to the original page after finish reading the footnote (like the back button).
 
-- **Quick-return from footnotes**: Toggles on and off the quick return functionality from the footnotes. When the functionality it's active, a short press of the power button will act as the back button from the footnotes page.
+- **Quick-return from Footnotes**: This setting appears under **Settings > Controls > Power Button** after you assign **Footnotes** to the short- or long-press Power action, or to the long-press Back or Menu action. When enabled, a short Power press returns from a footnote page to the original reading page.
 
 - **Taps & Gestures** (touchscreen devices): Configure the touch interactions
   available while reading from **Settings > Controls > Taps & Gestures**. The
@@ -598,17 +599,17 @@ Once any of the options above is set up, press **Confirm** while reading to open
 
 The **Sleep Screen** setting controls what is displayed when the device goes to sleep:
 
-| Mode               | Behavior                                                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Dark** (default) | The CrossInk logo on a dark background.                                                                                                          |
-| **Light**          | The CrossInk logo on a white background.                                                                                                         |
-| **Custom**         | A custom image from the SD card (see below). Falls back to **Dark** if no custom image is found.                                                 |
-| **Cover**          | The cover of the currently open book. Falls back to **Dark** if no book is open.                                                                 |
-| **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading.                     |
-| **Page Overlay**   | Keeps the current reader page visible and draws a sleep wallpaper over it. If no wallpaper is available, the page remains visible while reading. |
-| **Minimal**        | A compact sleep screen based on the Minimal home layout.                                                                                         |
+| Mode               | Behavior                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Dark** (default) | The CrossInk logo on a dark background.                                                                                                                |
+| **Light**          | The CrossInk logo on a white background.                                                                                                               |
+| **Custom**         | A custom image from the SD card (see below). Falls back to **Dark** if no custom image is found.                                                       |
+| **Cover**          | The cover of the currently open book. Falls back to **Dark** if no book is open.                                                                       |
+| **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading.                           |
+| **Page Overlay**   | Keeps the current reader page visible and draws a sleep wallpaper over it. If no wallpaper is available, the page remains visible while reading.       |
+| **Minimal**        | A compact sleep screen based on the Minimal home layout.                                                                                               |
 | **Minimal Stats**  | A compact sleep screen with recent reading stats, on supported devices; falls back to **Minimal** while tracking is off for the device or recent book. |
-| **None**           | A blank screen.                                                                                                                                  |
+| **None**           | A blank screen.                                                                                                                                        |
 
 #### Cover settings
 

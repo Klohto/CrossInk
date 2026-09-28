@@ -278,6 +278,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     PREVIOUS_PAGE = 31,
     NEARBY_POSITION_SYNC = 32,
     LIBRARY = 33,
+    // Power-only choices. Keep SLEEP=1 as the existing Sleep/Wake setting.
+    SLEEP_ONLY = 34,
+    WAKE_ONLY = 35,
     SHORT_PWRBTN_COUNT
   };
 
@@ -686,9 +689,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 
   ~CrossPointSettings() = default;
 
-  static constexpr uint16_t POWER_BUTTON_WAKE_SHORT_MS = 10;
-  static constexpr uint16_t POWER_BUTTON_WAKE_LONG_MS = 200;
   static constexpr uint16_t POWER_BUTTON_LONG_PRESS_MS = 400;
+  static constexpr uint16_t POWER_BUTTON_WAKE_SHORT_MS = 10;
+  static constexpr uint16_t POWER_BUTTON_WAKE_LONG_MS = POWER_BUTTON_LONG_PRESS_MS;
   static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
   static constexpr uint8_t MAX_SLEEP_TIMEOUT_MINUTES = SLEEP_TIMEOUT_NEVER_MINUTES;
@@ -714,9 +717,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   static constexpr size_t MAX_DEVICE_NAME_LENGTH = sizeof(deviceName) - 1;
 
   uint16_t getPowerButtonWakeDuration() const {
-    return (shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) ? POWER_BUTTON_WAKE_SHORT_MS
-                                                                    : POWER_BUTTON_WAKE_LONG_MS;
+    return shortPowerPressWakes() ? POWER_BUTTON_WAKE_SHORT_MS : POWER_BUTTON_WAKE_LONG_MS;
   }
+
+  bool shortPowerPressWakes() const { return shortPwrBtn == SLEEP || shortPwrBtn == WAKE_ONLY; }
 
   bool shouldShowClockInReader() const {
     return topReaderStatusBar.contains(ReaderStatusBarItem::Clock) ||

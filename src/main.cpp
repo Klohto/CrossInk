@@ -588,7 +588,10 @@ bool handleGlobalPowerButtonAction(const CrossPointSettings::SHORT_PWRBTN action
                                    const QuickLockTrigger quickLockTrigger) {
   switch (action) {
     case CrossPointSettings::SHORT_PWRBTN::SLEEP:
+    case CrossPointSettings::SHORT_PWRBTN::SLEEP_ONLY:
       enterDeepSleep();
+      return true;
+    case CrossPointSettings::SHORT_PWRBTN::WAKE_ONLY:
       return true;
     case CrossPointSettings::SHORT_PWRBTN::QUICK_LOCK:
       if (quickLockTrigger == QuickLockTrigger::None) {
@@ -1034,7 +1037,7 @@ bool shouldClearX4WakeGhosting() {
 
 // Wake validation runs before the SD card and its settings file are available.
 // Mirror the one setting that changes its behavior while entering sleep, so a
-// deliberate short sleep press can wake the device even after the button has
+// permitted short wake press can pass verification even after the button has
 // been released during boot. The write is skipped when the value is unchanged.
 constexpr char WAKE_NVS_NAMESPACE[] = "crosspoint";
 constexpr char WAKE_SHORT_PRESS_KEY[] = "wakeShortPr";
@@ -1054,7 +1057,7 @@ bool readWakeShortPressFromNvs() {
 
 void mirrorWakeShortPressToNvs() {
 #ifndef SIMULATOR
-  const uint8_t expected = SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP ? 1 : 0;
+  const uint8_t expected = SETTINGS.shortPowerPressWakes() ? 1 : 0;
   nvs_handle_t handle;
   if (nvs_open(WAKE_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) return;
   uint8_t current = 0;
@@ -1248,7 +1251,8 @@ void setup() {
   const auto wakeupReason = gpio.getWakeupReason();
 #ifndef SIMULATOR
   const bool shortPressWakes = readWakeShortPressFromNvs();
-  if (wakeupReason == HalGPIO::WakeupReason::PowerButton && !gpio.verifyPowerButtonWakeup(shortPressWakes)) {
+  if (wakeupReason == HalGPIO::WakeupReason::PowerButton &&
+      !gpio.verifyPowerButtonWakeup(shortPressWakes, CrossPointSettings::POWER_BUTTON_LONG_PRESS_MS)) {
     LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
     powerManager.startDeepSleep(gpio);
   }

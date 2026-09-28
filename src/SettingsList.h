@@ -85,6 +85,10 @@ inline bool isSideButtonActionSetting(const SettingInfo& setting) {
 }
 
 inline std::string sideButtonOptionLabel(const SettingInfo& setting, const uint8_t displayIndex) {
+  if ((settingKeyIs(setting, "shortPwrBtn") || settingKeyIs(setting, "longPwrBtn")) &&
+      displayIndex < setting.enumRawValues.size() && setting.enumRawValues[displayIndex] == CrossPointSettings::SLEEP) {
+    return std::string(tr(STR_SLEEP)) + "/" + tr(STR_WAKE);
+  }
   if (isSideButtonActionSetting(setting) && displayIndex < setting.enumRawValues.size()) {
     const uint8_t action = setting.enumRawValues[displayIndex];
     if (action == CrossPointSettings::SIDE_ROTATE_COUNTERCLOCKWISE ||
@@ -365,10 +369,8 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
       switch (action) {
         case Action::IGNORE:
           return Chord::CHORD_DISABLED;
-        // Deep sleep wakes from the Power GPIO alone. A chord cannot be used
-        // as the matching wake gesture, so do not offer a misleading action.
         case Action::SLEEP:
-          return SHORTCUT_OPTION_UNAVAILABLE;
+          return Chord::CHORD_SLEEP;
         case Action::PAGE_TURN:
           return Chord::CHORD_PAGE_TURN;
         case Action::PREVIOUS_PAGE:
@@ -496,7 +498,6 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
       break;
     case ShortcutOptionCatalog::HomeButton:
       switch (action) {
-        case Action::SLEEP:
         case Action::TOGGLE_TILT_PAGE_TURN:
         case Action::TOGGLE_HOME_BUTTON_IN_READER:
         case Action::TOGGLE_FRONTLIGHT:
@@ -510,8 +511,9 @@ inline uint8_t shortcutRawValue(const ShortcutOptionCatalog catalog, const Cross
 }
 
 inline void appendShortcutOptions(SettingInfo& setting, const ShortcutOptionCatalog catalog) {
-  setting.enumValues.reserve(QuickActions::shortcutActionOrder.size() + 3);
-  setting.enumRawValues.reserve(QuickActions::shortcutActionOrder.size() + 3);
+  const size_t extraOptions = catalog == ShortcutOptionCatalog::PowerButton ? 2 : 0;
+  setting.enumValues.reserve(QuickActions::shortcutActionOrder.size() + 3 + extraOptions);
+  setting.enumRawValues.reserve(QuickActions::shortcutActionOrder.size() + 3 + extraOptions);
 
   if (catalog == ShortcutOptionCatalog::HomeButton) {
     setting.enumValues.push_back(StrId::STR_BACK_HOME);
@@ -530,6 +532,12 @@ inline void appendShortcutOptions(SettingInfo& setting, const ShortcutOptionCata
     if (rawValue == SHORTCUT_OPTION_UNAVAILABLE) continue;
     setting.enumValues.push_back(QuickActions::actionLabel(static_cast<uint8_t>(action)));
     setting.enumRawValues.push_back(rawValue);
+    if (catalog == ShortcutOptionCatalog::PowerButton && action == CrossPointSettings::SLEEP) {
+      setting.enumValues.push_back(StrId::STR_SLEEP);
+      setting.enumRawValues.push_back(CrossPointSettings::SLEEP_ONLY);
+      setting.enumValues.push_back(StrId::STR_WAKE);
+      setting.enumRawValues.push_back(CrossPointSettings::WAKE_ONLY);
+    }
   }
 }
 

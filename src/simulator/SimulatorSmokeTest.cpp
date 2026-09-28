@@ -430,10 +430,6 @@ class SimulatorSmokeTest {
     });
     if (chordSetting == allSettings.end()) fail("Power chord setting is missing");
     if (std::find(chordSetting->enumRawValues.begin(), chordSetting->enumRawValues.end(),
-                  CrossPointSettings::CHORD_SLEEP) != chordSetting->enumRawValues.end()) {
-      fail("Sleep is still offered for a chord that cannot wake the device");
-    }
-    if (std::find(chordSetting->enumRawValues.begin(), chordSetting->enumRawValues.end(),
                   CrossPointSettings::CHORD_QUICK_ACTIONS) == chordSetting->enumRawValues.end()) {
       fail("Quick Actions is missing from the Power + Up chord setting");
     }
@@ -478,10 +474,67 @@ class SimulatorSmokeTest {
     verifyLibraryChoice("powerChordAction", ShortcutOptionCatalog::ButtonChord);
     verifyLibraryChoice("longPressMenuAction", ShortcutOptionCatalog::LongPress);
     verifyLibraryChoice("longPressBackAction", ShortcutOptionCatalog::LongPress);
+    const auto verifySleepChoice = [&](const char* key, const ShortcutOptionCatalog catalog) {
+      const auto setting = std::find_if(allSettings.begin(), allSettings.end(),
+                                        [key](const SettingInfo& candidate) { return settingKeyIs(candidate, key); });
+      const auto raw = shortcutRawValue(catalog, CrossPointSettings::SLEEP);
+      if (setting == allSettings.end() || raw == SHORTCUT_OPTION_UNAVAILABLE) {
+        fail("Sleep shortcut is missing from %s", key);
+      }
+      const auto choice = std::find(setting->enumRawValues.begin(), setting->enumRawValues.end(), raw);
+      const std::string expected = catalog == ShortcutOptionCatalog::PowerButton
+                                       ? std::string(tr(STR_SLEEP)) + "/" + tr(STR_WAKE)
+                                       : tr(STR_SLEEP);
+      if (choice == setting->enumRawValues.end() ||
+          sideButtonOptionLabel(*setting, static_cast<uint8_t>(choice - setting->enumRawValues.begin())) != expected) {
+        fail("Sleep shortcut has the wrong label in %s", key);
+      }
+    };
+    verifySleepChoice("shortPwrBtn", ShortcutOptionCatalog::PowerButton);
+    verifySleepChoice("longPwrBtn", ShortcutOptionCatalog::PowerButton);
+    for (const char* key : {"shortPwrBtn", "longPwrBtn"}) {
+      const auto setting = std::find_if(allSettings.begin(), allSettings.end(),
+                                        [key](const SettingInfo& candidate) { return settingKeyIs(candidate, key); });
+      if (setting == allSettings.end()) fail("Power shortcut setting is missing: %s", key);
+      for (const auto [action, label] : {std::pair{CrossPointSettings::SLEEP_ONLY, StrId::STR_SLEEP},
+                                         std::pair{CrossPointSettings::WAKE_ONLY, StrId::STR_WAKE}}) {
+        const auto choice = std::find(setting->enumRawValues.begin(), setting->enumRawValues.end(), action);
+        if (choice == setting->enumRawValues.end() ||
+            sideButtonOptionLabel(*setting, static_cast<uint8_t>(choice - setting->enumRawValues.begin())) !=
+                I18N.get(label)) {
+          fail("Power-only shortcut is missing or mislabeled in %s", key);
+        }
+      }
+    }
+    const uint8_t savedShortPowerAction = SETTINGS.shortPwrBtn;
+    for (const auto [action, wakes] :
+         {std::pair{CrossPointSettings::IGNORE, false}, std::pair{CrossPointSettings::SLEEP_ONLY, false},
+          std::pair{CrossPointSettings::WAKE_ONLY, true}, std::pair{CrossPointSettings::SLEEP, true}}) {
+      SETTINGS.shortPwrBtn = action;
+      if (SETTINGS.shortPowerPressWakes() != wakes) fail("Short Power wake policy does not match its shortcut");
+    }
+    SETTINGS.shortPwrBtn = savedShortPowerAction;
+    verifySleepChoice("powerChordAction", ShortcutOptionCatalog::ButtonChord);
+    verifySleepChoice("longPressMenuAction", ShortcutOptionCatalog::LongPress);
+    verifySleepChoice("longPressBackAction", ShortcutOptionCatalog::LongPress);
+    for (const char* key : {"sideButtonUpShort", "sideButtonUpLong", "sideButtonDownShort", "sideButtonDownLong"}) {
+      const auto side = std::find_if(sideButtonSettings.begin(), sideButtonSettings.end(),
+                                     [key](const SettingInfo& candidate) { return settingKeyIs(candidate, key); });
+      if (side != sideButtonSettings.end()) {
+        const auto sleep = std::find(side->enumRawValues.begin(), side->enumRawValues.end(), CrossPointSettings::SLEEP);
+        if (sleep == side->enumRawValues.end() ||
+            sideButtonOptionLabel(*side, static_cast<uint8_t>(sleep - side->enumRawValues.begin())) != tr(STR_SLEEP)) {
+          fail("Sleep shortcut has the wrong label in %s", key);
+        }
+      }
+    }
     if (gpio.hasHomeKey()) {
       verifyLibraryChoice("homeButtonTapAction", ShortcutOptionCatalog::HomeButton);
       verifyLibraryChoice("homeButtonDoubleTapAction", ShortcutOptionCatalog::HomeButton);
       verifyLibraryChoice("homeButtonLongPressAction", ShortcutOptionCatalog::HomeButton);
+      verifySleepChoice("homeButtonTapAction", ShortcutOptionCatalog::HomeButton);
+      verifySleepChoice("homeButtonDoubleTapAction", ShortcutOptionCatalog::HomeButton);
+      verifySleepChoice("homeButtonLongPressAction", ShortcutOptionCatalog::HomeButton);
     }
     if (hasSideButtonChord) {
       const auto side =
@@ -489,6 +542,12 @@ class SimulatorSmokeTest {
                        [](const SettingInfo& setting) { return settingKeyIs(setting, "sideButtonChordAction"); });
       if (side == sideButtonSettings.end() || !hasLibrary(*side, ShortcutOptionCatalog::ButtonChord)) {
         fail("Library shortcut is missing from the filtered Up + Down choices");
+      }
+      const auto sleep =
+          std::find(side->enumRawValues.begin(), side->enumRawValues.end(), CrossPointSettings::CHORD_SLEEP);
+      if (sleep == side->enumRawValues.end() ||
+          sideButtonOptionLabel(*side, static_cast<uint8_t>(sleep - side->enumRawValues.begin())) != tr(STR_SLEEP)) {
+        fail("Sleep shortcut is missing or mislabeled in the filtered Up + Down choices");
       }
     }
     if (!QuickActions::isQuickActionSlotActionAvailable(CrossPointSettings::LIBRARY) ||

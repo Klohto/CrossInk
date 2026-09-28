@@ -17,6 +17,7 @@
 
 ### Changed
 
+- Set Power short-press and long-press to Sleep, Wake, or Sleep/Wake separately; holding Power can always wake the device. Chord shortcuts and the home button can also now sleep the device.
 - Brightness and warmth gestures now respond while you drag, with longer swipes making larger adjustments.
 - Text drawing resolves clipping and screen rotation once per glyph, reducing work when painting menus and book pages.
 - Library reuses its index on return visits and refreshes after file changes, instead of scanning the card every time.
