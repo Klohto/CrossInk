@@ -2,6 +2,7 @@
 
 #include <AppCapabilities.h>
 #include <Epub.h>
+#include <FontCacheManager.h>
 #include <FreeInkApp.h>
 #include <FreeInkUIGfxRenderer.h>
 
@@ -9,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -250,7 +252,7 @@ class EpubReaderDrawerActivity final : public Activity {
   void syncKeypadValue();
   int16_t drawerHeight() const;
   freeink::ui::Rect previewBounds() const;
-  bool renderPreview(int& previewFontId);
+  bool renderPreview(int& previewFontId, std::optional<FontCacheManager::PrewarmScope>& prewarmScope);
   void renderPreviewWithAntiAliasing(int previewFontId);
   void renderPreviewContents(const ReaderSettingsDraft& previewSettings, int previewFontId);
   void renderPreviewText(const ReaderSettingsDraft& previewSettings, int previewFontId);

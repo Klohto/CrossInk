@@ -2419,14 +2419,17 @@ void EpubReaderDrawerActivity::renderPreviewContents(const ReaderSettingsDraft& 
   renderPreviewText(previewSettings, previewFontId);
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
     const auto& metrics = UITheme::getInstance().getMetrics();
+    const int labelTextHeight = renderer.getTextHeight(UI_10_FONT_ID);
     const char* name = previewSettings.sdFontFamilyName[0]
                            ? previewSettings.sdFontFamilyName.data()
                            : (previewSettings.fontFamily == 0 ? tr(STR_LEXEND_DECA) : tr(STR_BITTER));
     char label[128];
     std::snprintf(label, sizeof(label), "%s \"%s\", %upt", tr(STR_PREVIEW), name, previewSettings.readerFontPointSize);
+    const int separatorY = preview.bottom() - metrics.previewPadding - labelTextHeight - 4;
+    renderer.drawLine(preview.x, separatorY, preview.right() - 1, separatorY, ReaderUtils::readerForegroundBlack());
     renderer.beginTextClip(preview.x, preview.y, preview.width, preview.height);
     renderer.drawText(UI_10_FONT_ID, preview.x + metrics.previewPadding,
-                      preview.bottom() - metrics.previewPadding - renderer.getTextHeight(UI_10_FONT_ID), label,
+                      preview.bottom() - metrics.previewPadding - labelTextHeight, label,
                       ReaderUtils::readerForegroundBlack());
     renderer.endTextClip();
     renderer.drawLine(preview.x, preview.bottom() - 1, preview.right() - 1, preview.bottom() - 1,
@@ -2484,7 +2487,7 @@ void EpubReaderDrawerActivity::renderSamplePreviewText(const ReaderSettingsDraft
   if (!previewModel || !previewModel->valid()) return;
   const auto& metrics = UITheme::getInstance().getMetrics();
   const fui::Rect area = previewBounds();
-  const int labelHeight = renderer.getTextHeight(UI_10_FONT_ID) + metrics.previewPadding + 4;
+  const int labelHeight = renderer.getTextHeight(UI_10_FONT_ID) + metrics.previewPadding + 8;
   const int textHeight = std::max(0, area.height - labelHeight - metrics.previewPadding);
   // The sample is a short page: show top AND bottom margins proportionally
   // to its height, while horizontal margins and font sizes remain actual pixels.
@@ -2508,7 +2511,8 @@ void EpubReaderDrawerActivity::renderPreviewUnavailable() {
                             ReaderUtils::readerForegroundBlack());
 }
 
-bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
+bool EpubReaderDrawerActivity::renderPreview(int& previewFontId,
+                                             std::optional<FontCacheManager::PrewarmScope>& prewarmScope) {
   previewFontId = -1;
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW && !showsSamplePreview()) return false;
   if (!previewDirty) return false;
@@ -2568,10 +2572,10 @@ bool EpubReaderDrawerActivity::renderPreview(int& previewFontId) {
     return false;
   }
   if (auto* fontCacheManager = renderer.getFontCacheManager()) {
-    auto scope = fontCacheManager->createPrewarmScope();
+    prewarmScope.emplace(*fontCacheManager, FontCacheManager::PreparationPolicy::Normal);
     renderPreviewContents(previewSettings,
                           previewFontId);  // Scan the page text before loading the selected font's glyphs.
-    if (!scope.endScanAndPrewarm() && ownedPreviewModel) {
+    if (!prewarmScope->endScanAndPrewarm() && ownedPreviewModel) {
       LOG_ERR("ERDM", "Could not prewarm selected font for button preview");
       restoreReaderDraftFont(draft, lastGoodPreviewSettings);
       if (!CROSSINK_APP_READER_SAMPLE_PREVIEW) {
@@ -2818,7 +2822,9 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   }
   previousDrawerEdge = drawerEdge;
   int previewFontId = -1;
-  bool previewRendered = !CROSSINK_APP_READER_SAMPLE_PREVIEW && renderPreview(previewFontId);
+  // Keep prewarmed glyphs resident through the BW and optional grayscale passes.
+  std::optional<FontCacheManager::PrewarmScope> previewPrewarmScope;
+  bool previewRendered = !CROSSINK_APP_READER_SAMPLE_PREVIEW && renderPreview(previewFontId, previewPrewarmScope);
   uiReady = false;
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW && fontPreviewLoading) {
     GUI.drawPopup(renderer, tr(STR_LOADING_POPUP), true);
@@ -2828,7 +2834,7 @@ void EpubReaderDrawerActivity::render(RenderLock&&) {
   app.render();
   if (CROSSINK_APP_READER_SAMPLE_PREVIEW) {
     previewDirty = true;  // The full-screen UI cleared the sample area as well.
-    previewRendered = renderPreview(previewFontId);
+    previewRendered = renderPreview(previewFontId, previewPrewarmScope);
     if (showsSamplePreview() && previewUnavailable) {
       app.render();  // A failed font selection rolled the draft back; repaint its values too.
       renderPreviewUnavailable();
