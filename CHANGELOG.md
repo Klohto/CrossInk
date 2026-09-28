@@ -48,6 +48,7 @@
 - Longer power-on instructions wrap on the finished update screen.
 - Sticky now records periodic heap and PSRAM statistics over its ROM logging path.
 - RTL EPUBs use reading-order swipe and tap directions.
+- Korean text keeps natural syllable spacing when justified and wraps by word.
 
 ## [v1.6.0] - 2026-09-21
 
