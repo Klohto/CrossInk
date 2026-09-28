@@ -12,6 +12,7 @@
 - TTF font support on ESP32-S3 devices. Whole-point sizes from 8pt to 22pt will be automatically available.
 - In-reader menu for X3/X4/X4 Classic have been updated to a modified version of the in-reader menu for touch devices
 - Chapter pages and book progress information is displayed in the frontlight drawer when in the reader for X4 Pro
+- Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
 
 ### Changed
 

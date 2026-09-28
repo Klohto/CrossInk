@@ -19,6 +19,7 @@
 #include "KOReaderCredentialStore.h"
 #include "QuickActions.h"
 #include "activities/settings/SettingsActivity.h"
+#include "components/UITheme.h"
 #include "util/Dictionary.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FontFamilyLabel.h"
@@ -569,16 +570,16 @@ inline const std::vector<SettingInfo>& getBaseSettingsList() {
                                 CrossPointSettings::REFRESH_30, CrossPointSettings::REFRESH_NEVER}));
     add(SettingInfo::Toggle(StrId::STR_NIGHT_MODE, &CrossPointSettings::screenInverted, "screenInverted",
                             StrId::STR_CAT_DISPLAY));
-    add(SettingInfo::Enum(
-            StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
-            {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_MINIMAL, StrId::STR_THEME_DASHBOARD, StrId::STR_THEME_LYRA,
-             StrId::STR_THEME_LYRA_EXTENDED, StrId::STR_THEME_LYRA_CAROUSEL, StrId::STR_THEME_ROUNDEDRAFF},
-            "uiTheme", StrId::STR_CAT_DISPLAY)
+    add(SettingInfo::Enum(StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
+                          {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_MINIMAL, StrId::STR_THEME_DASHBOARD,
+                           StrId::STR_THEME_LYRA, StrId::STR_THEME_LYRA_EXTENDED, StrId::STR_THEME_LYRA_CAROUSEL,
+                           StrId::STR_THEME_ROUNDEDRAFF, StrId::STR_THEME_COVER_GRID},
+                          "uiTheme", StrId::STR_CAT_DISPLAY)
             .withEnumRawValues({CrossPointSettings::UI_THEME::CLASSIC, CrossPointSettings::UI_THEME::MINIMAL,
                                 CrossPointSettings::UI_THEME::DASHBOARD, CrossPointSettings::UI_THEME::LYRA,
                                 CrossPointSettings::UI_THEME::LYRA_3_COVERS,
-                                CrossPointSettings::UI_THEME::LYRA_CAROUSEL,
-                                CrossPointSettings::UI_THEME::ROUNDEDRAFF}));
+                                CrossPointSettings::UI_THEME::LYRA_CAROUSEL, CrossPointSettings::UI_THEME::ROUNDEDRAFF,
+                                CrossPointSettings::UI_THEME::COVER_GRID}));
     add(SettingInfo::Enum(StrId::STR_UI_SCALE, &CrossPointSettings::uiScale, {StrId::STR_SMALL, StrId::STR_LARGE},
                           "uiScale", StrId::STR_CAT_DISPLAY)
             .withEnumRawValues({CrossPointSettings::UI_SCALE_SMALL, CrossPointSettings::UI_SCALE_LARGE}));
@@ -1029,6 +1030,13 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     } else if (!Frontlight.hasColorTemperature()) {
       removeEnumRawValue(setting, CrossPointSettings::TWO_FINGER_SWIPE_INCREASE_WARMTH);
       removeEnumRawValue(setting, CrossPointSettings::TWO_FINGER_SWIPE_DECREASE_WARMTH);
+    }
+  }
+  if (!UITheme::supportsCoverGrid()) {
+    const auto themeIt =
+        std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_UI_THEME; });
+    if (themeIt != v.end()) {
+      removeEnumRawValue(*themeIt, static_cast<uint8_t>(CrossPointSettings::UI_THEME::COVER_GRID));
     }
   }
   if (hasTouch) {
