@@ -376,6 +376,7 @@ class SimulatorSmokeTest {
     SETTINGS.librarySortMethod = 3;
     SETTINGS.librarySortDescending = 0;
     SETTINGS.libraryListExpanded = 1;
+    SETTINGS.recentBooksView = CrossPointSettings::RECENT_BOOKS_GRID;
     SETTINGS.libraryShowMarkdown = 0;
     SETTINGS.libraryHideFinishedBooks = 1;
     JsonDocument librarySaved;
@@ -383,20 +384,29 @@ class SimulatorSmokeTest {
     SETTINGS.librarySortMethod = 0;
     SETTINGS.librarySortDescending = 1;
     SETTINGS.libraryListExpanded = 0;
+    SETTINGS.recentBooksView = CrossPointSettings::RECENT_BOOKS_LIST;
     SETTINGS.libraryShowMarkdown = 1;
     SETTINGS.libraryHideFinishedBooks = 0;
     SETTINGS.fromJson(librarySaved.as<JsonVariantConst>());
     if (SETTINGS.librarySortMethod != 3 || SETTINGS.librarySortDescending || !SETTINGS.libraryListExpanded ||
-        SETTINGS.libraryShowMarkdown || !SETTINGS.libraryHideFinishedBooks) {
+        SETTINGS.recentBooksView != CrossPointSettings::RECENT_BOOKS_GRID || SETTINGS.libraryShowMarkdown ||
+        !SETTINGS.libraryHideFinishedBooks) {
       fail("Library settings round-trip mismatch");
     }
     librarySaved["librarySortMethod"] = 99;
     librarySaved["libraryShowTxt"] = 2;
     librarySaved["libraryHideFinishedBooks"] = 2;
+    librarySaved["recentBooksView"] = 2;
     SETTINGS.fromJson(librarySaved.as<JsonVariantConst>());
-    if (SETTINGS.librarySortMethod != 3 || SETTINGS.libraryShowTxt != 1 || !SETTINGS.libraryHideFinishedBooks) {
+    if (SETTINGS.librarySortMethod != 3 || SETTINGS.libraryShowTxt != 1 || !SETTINGS.libraryHideFinishedBooks ||
+        SETTINGS.recentBooksView != CrossPointSettings::RECENT_BOOKS_LIST) {
       fail("Invalid Library settings were not rejected");
     }
+    librarySaved.remove("recentBooksView");
+    SETTINGS.recentBooksView = CrossPointSettings::RECENT_BOOKS_GRID;
+    SETTINGS.fromJson(librarySaved.as<JsonVariantConst>());
+    if (SETTINGS.recentBooksView != CrossPointSettings::RECENT_BOOKS_LIST)
+      fail("Missing Recently Opened view did not default to List");
     SETTINGS.fromJson(original.as<JsonVariantConst>());
   }
 
