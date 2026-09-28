@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- File Transfer choices no longer appear preselected when opened on a touch device.
 - Saved clipping lists now show a scrollbar when more clippings are available below the visible rows.
 - EPUB Safe Mode no longer pins inherited fonts and page layout as personal book settings.
 - The X4 Pro Home button now steps back through dictionary lookup, chapter selection, and nested settings instead of jumping to Home.
