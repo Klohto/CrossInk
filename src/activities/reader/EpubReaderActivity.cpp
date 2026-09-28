@@ -39,6 +39,7 @@
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderClippingListActivity.h"
 #include "EpubReaderDrawerActivity.h"
+#include "EpubReaderFootnoteSelectActivity.h"
 #include "EpubReaderFootnotesActivity.h"
 #include "EpubReaderPercentSelectionActivity.h"
 #include "EpubReaderUtils.h"
@@ -3840,18 +3841,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuAction action, const 
       break;
     }
     case EpubReaderMenuAction::FOOTNOTES: {
-      pauseReadingPaceTimer("footnotes");
-      startActivityForResult(std::make_unique<EpubReaderFootnotesActivity>(renderer, mappedInput, currentPageFootnotes),
-                             [this, returnToReaderMenu](const ActivityResult& result) {
-                               if (!result.isCancelled) {
-                                 const auto& footnoteResult = std::get<FootnoteResult>(result.data);
-                                 navigateToHref(footnoteResult.href, true);
-                               } else if (returnToReaderMenu) {
-                                 openReaderMenu();
-                                 return;
-                               }
-                               requestUpdate();
-                             });
+      openFootnoteSelect(returnToReaderMenu);
       break;
     }
     case EpubReaderMenuAction::GO_TO_PERCENT: {
@@ -5313,34 +5303,94 @@ void EpubReaderActivity::openQuickActionsPopup() {
   }
 }
 
+void EpubReaderActivity::openFootnoteSelect(const bool returnToReaderMenu) {
+  if (currentPageFootnotes.empty()) return;
+  if (currentPageFootnotes.size() == 1) {
+    navigateToHref(currentPageFootnotes[0].href, true);
+    requestUpdate();
+    return;
+  }
+
+  std::unique_ptr<Page> page;
+  FootnoteLinkTargets targets{};
+  ReaderViewportLayout layout{};
+  const int fontId = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
+  {
+    RenderLock lock(*this);
+    if (section) {
+      page = section->loadPageFromSectionFile();
+      if (page) {
+        layout = computeReaderViewportLayout(renderer, automaticPageTurnActive);
+        targets =
+            buildFootnoteLinkTargets(*page, page->footnotes, renderer, fontId, layout.marginTop, layout.marginLeft);
+      }
+    }
+  }
+
+  pauseReadingPaceTimer("footnotes");
+  const auto onResult = [this, returnToReaderMenu](const ActivityResult& result) {
+    if (result.isCancelled) {
+      if (returnToReaderMenu) {
+        openReaderMenu();
+      } else {
+        resumeReadingPaceTimer("footnotes_cancel");
+        requestUpdate();
+      }
+      return;
+    }
+    const auto* selected = std::get_if<FootnoteResult>(&result.data);
+    if (selected) {
+      navigateToHref(selected->href, true);
+    } else {
+      resumeReadingPaceTimer("footnotes_invalid_result");
+    }
+    requestUpdate();
+  };
+
+  bool allTargetsVisible =
+      page && page->footnotes.size() == currentPageFootnotes.size() && page->footnotes.size() <= targets.size();
+  if (allTargetsVisible) {
+    for (size_t i = 0; i < page->footnotes.size(); ++i) {
+      if (targets[i].width <= 0 || targets[i].height <= 0) {
+        allTargetsVisible = false;
+        break;
+      }
+    }
+  }
+  if (allTargetsVisible) {
+    auto selector = makeUniqueNoThrow<EpubReaderFootnoteSelectActivity>(renderer, mappedInput, std::move(page), targets,
+                                                                        fontId, layout.marginLeft, layout.marginTop);
+    if (selector) {
+      startActivityForResult(std::move(selector), onResult);
+      return;
+    }
+    LOG_ERR("FNS", "OOM allocating footnote selector; falling back to list");
+  }
+
+  // Older or malformed page records can lack a drawable link ID. Keep every
+  // destination reachable through the existing list in that case.
+  auto list = makeUniqueNoThrow<EpubReaderFootnotesActivity>(renderer, mappedInput, currentPageFootnotes);
+  if (list) {
+    startActivityForResult(std::move(list), onResult);
+  } else {
+    LOG_ERR("FNS", "OOM allocating footnote fallback list");
+    if (returnToReaderMenu) {
+      openReaderMenu();
+    } else {
+      resumeReadingPaceTimer("footnotes_alloc_failed");
+      requestUpdate();
+    }
+  }
+}
+
 void EpubReaderActivity::executeFootnoteQuickAction(const bool suppressInitialPowerRelease) {
   clearPendingManualPageTurns();
   if (footnoteDepth > 0 && SETTINGS.pwrBtnFootnoteBack) {
     restoreSavedPosition();
     return;
   }
-
-  if (currentPageFootnotes.size() == 1) {
-    navigateToHref(currentPageFootnotes[0].href, true);
-    return;
-  }
-
-  if (currentPageFootnotes.size() > 1) {
-    if (suppressInitialPowerRelease) {
-      suppressPowerShortcutRelease();
-    }
-    pauseReadingPaceTimer("footnotes");
-    startActivityForResult(std::make_unique<EpubReaderFootnotesActivity>(renderer, mappedInput, currentPageFootnotes),
-                           [this](const ActivityResult& result) {
-                             if (!result.isCancelled) {
-                               const auto& footnoteResult = std::get<FootnoteResult>(result.data);
-                               navigateToHref(footnoteResult.href, true);
-                             } else {
-                               resumeReadingPaceTimer("footnotes_cancel");
-                             }
-                             requestUpdate();
-                           });
-  }
+  if (currentPageFootnotes.size() > 1 && suppressInitialPowerRelease) suppressPowerShortcutRelease();
+  openFootnoteSelect(false);
 }
 
 bool EpubReaderActivity::executeShortPowerButtonAction() {
@@ -7455,56 +7505,9 @@ bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fo
 void EpubReaderActivity::buildFootnoteTouchTargets(const Page& page, const int fontId, const int orientedMarginTop,
                                                    const int orientedMarginLeft) {
   currentPageFootnoteTouchTargets.fill({});
-  if (activeFootnotePreview || currentPageFootnotes.empty()) {
-    return;
-  }
-
-  const int lineHeight = renderer.getLineHeight(fontId);
-  for (const auto& element : page.elements) {
-    if (!element || element->getTag() != TAG_PageLine) continue;
-    const auto& line = static_cast<const PageLine&>(*element);
-    if (!line.getBlock()) continue;
-
-    const auto& block = *line.getBlock();
-    for (uint16_t wordIndex = 0; wordIndex < block.wordCount(); ++wordIndex) {
-      const uint8_t linkId = block.wordLinkId(wordIndex);
-      if (linkId == 0) continue;
-
-      const auto footnoteIt = std::find_if(currentPageFootnotes.begin(), currentPageFootnotes.end(),
-                                           [linkId](const FootnoteEntry& entry) { return entry.linkId == linkId; });
-      if (footnoteIt == currentPageFootnotes.end()) continue;
-      const size_t footnoteIndex = static_cast<size_t>(footnoteIt - currentPageFootnotes.begin());
-      if (footnoteIndex >= currentPageFootnoteTouchTargets.size()) continue;
-
-      const auto style = static_cast<EpdFontFamily::Style>(block.wordStyle(wordIndex) & ~EpdFontFamily::UNDERLINE);
-      const int wordX = orientedMarginLeft + line.xPos + block.wordXpos(wordIndex);
-      int wordY = orientedMarginTop + line.yPos;
-      if ((style & EpdFontFamily::SUP) != 0) {
-        wordY -= renderer.getFontAscenderSize(fontId) * 2 / 5;
-      } else if ((style & EpdFontFamily::SUB) != 0) {
-        wordY += renderer.getFontAscenderSize(fontId) / 4;
-      }
-      int wordWidth = renderer.getTextAdvanceX(fontId, block.wordText(wordIndex), style);
-      if (wordIndex + 1 < block.wordCount() && block.wordXpos(wordIndex + 1) > block.wordXpos(wordIndex)) {
-        wordWidth = std::min(wordWidth, static_cast<int>(block.wordXpos(wordIndex + 1) - block.wordXpos(wordIndex)));
-      }
-      if (wordWidth <= 0) continue;
-
-      auto& target = currentPageFootnoteTouchTargets[footnoteIndex];
-      if (target.width <= 0 || target.height <= 0) {
-        target = {static_cast<int16_t>(wordX), static_cast<int16_t>(wordY), static_cast<int16_t>(wordWidth),
-                  static_cast<int16_t>(lineHeight)};
-        continue;
-      }
-
-      const int left = std::min<int>(target.x, wordX);
-      const int top = std::min<int>(target.y, wordY);
-      const int right = std::max<int>(target.x + target.width, wordX + wordWidth);
-      const int bottom = std::max<int>(target.y + target.height, wordY + lineHeight);
-      target = {static_cast<int16_t>(left), static_cast<int16_t>(top), static_cast<int16_t>(right - left),
-                static_cast<int16_t>(bottom - top)};
-    }
-  }
+  if (activeFootnotePreview || currentPageFootnotes.empty()) return;
+  currentPageFootnoteTouchTargets =
+      buildFootnoteLinkTargets(page, currentPageFootnotes, renderer, fontId, orientedMarginTop, orientedMarginLeft);
 }
 
 bool EpubReaderActivity::handleTouchFootnoteLink(const int touchX, const int touchY) {

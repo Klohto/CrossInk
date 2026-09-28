@@ -16,6 +16,7 @@
 #include "BookmarkStore.h"
 #include "EndOfBookOptions.h"
 #include "EpubReaderMenuModel.h"
+#include "FootnoteLinkTargets.h"
 #include "GlobalReadingStats.h"
 #include "ManualPageTurnQueue.h"
 #include "ReaderProgressSaveDebouncer.h"
@@ -257,13 +258,7 @@ class EpubReaderActivity final : public Activity {
   std::vector<FootnoteEntry> currentPageFootnotes;
 #if CROSSINK_APP_CAP_TOUCH
   ReaderPinchGesture pinchFontGesture;
-  struct FootnoteTouchTarget {
-    int16_t x = 0;
-    int16_t y = 0;
-    int16_t width = 0;
-    int16_t height = 0;
-  };
-  std::array<FootnoteTouchTarget, EPUB_MAX_FOOTNOTES_PER_PAGE> currentPageFootnoteTouchTargets{};
+  FootnoteLinkTargets currentPageFootnoteTouchTargets{};
 #endif
   struct SavedPosition {
     int spineIndex;
@@ -428,6 +423,7 @@ class EpubReaderActivity final : public Activity {
                                 QuickLockTrigger quickLockTrigger = QuickLockTrigger::LongMenu);
   void openQuickActionsPopup();
   void executeFootnoteQuickAction(bool suppressInitialPowerRelease = false);
+  void openFootnoteSelect(bool returnToReaderMenu);
 #if CROSSINK_APP_CAP_TOUCH
   bool handlePinchFontResize();
   void resetPinchFontGesture();
