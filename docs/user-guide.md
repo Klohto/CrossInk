@@ -124,7 +124,7 @@ The Browse Files screen acts as a file and folder browser. The full path to the 
 - **Navigate List:** Use **Left** (or **Up**), or **Right** (or **Down**) to move the selection cursor up and down through folders and books. You can also long-press these buttons to scroll a full page up or down.
 - **Open Selection:** Press **Confirm** to open a folder or start reading a selected book. Selecting a `.bmp` file will open the image viewer.
 - **Delete Files or Folders:** Hold and release **Confirm** to open the selected file or folder action menu, then choose **Delete**. You will be given an option to either confirm or cancel. Folder deletion is limited to empty folders.
-- **Book Actions:** EPUB and XTC files can also show options such as **Delete Cache** or **Mark Finished** from the same action menu.
+- **Book Actions:** EPUB and XTC files can also show options such as **Delete Cache**, **Mark Finished**, and **Track Reading Stats** from the same action menu. Turning tracking off for a book keeps its saved stats; it only stops new tracking for that book.
 
 ### 3.4 Recent Books Screen
 
@@ -189,9 +189,9 @@ device model and build.
   - "None" - A blank screen
   - "Cover + Custom" - The book cover image while actively reading, falls back to "Custom" behavior otherwise
   - "Page Overlay" - Uses an image to overlay on top of the current page. Best used with transparent `.png` files or black and white `.bmp` files.
-  - "Reading Stats" - Recent reading stats on the sleep screen
+  - "Reading Stats" - Recent reading stats on the sleep screen; falls back to **Minimal** while tracking is off for the device or recent book
   - "Minimal" - A minimal sleep screen
-  - "Minimal Stats" - A minimal stats sleep screen on supported devices
+  - "Minimal Stats" - A minimal stats sleep screen on supported devices; falls back to **Minimal** while tracking is off for the device or recent book
   - "Dashboard" - A dashboard-style sleep screen based on the Dashboard theme
   - "Quick Resume" - Keeps the current content visible while sleeping
 
@@ -224,6 +224,8 @@ device model and build.
   - "Lyra Extended" - Lyra, but displays 3 books instead of 1 on the **[Home Screen](#31-home-screen)**
   - "Lyra Carousel" - A carousel-based Lyra home layout
   - "RoundedRaff" - A rounded theme with additional visual styling
+
+  Themes that show reading stats hide those stats while **Track Reading Stats** is off.
 
 - **Recent Books View**: Choose whether the Recent Books screen uses a list or grid layout.
 
@@ -395,8 +397,15 @@ which status-bar items are shown.
 - **Files & Cache**: Configure hidden files, file extensions, file-browser view,
   finished-book behavior, and clear the reading cache.
 
-- **Reading Stats**: Configure stats tracking and idle-time filtering, and
-  access all-time stats backup/reset actions.
+- **Reading Stats**: Turn device-wide stats tracking on or off, configure
+  idle-time filtering, and access all-time stats backup/reset actions. Turning
+  tracking off pauses new per-book and all-time stats but keeps the history
+  and Time Left pace estimates already saved on the device. Stats entries and
+  recorded-stat displays in menus and themes are hidden while tracking is off;
+  the Dashboard can still show a saved Time Left estimate. Turn tracking back
+  on to see the saved history and resume recording. Time and pages from the off
+  period are not added later. See [Reader Features](./reader-features.md#turn-tracking-on-or-off)
+  for per-book controls.
 
 - **Wi-Fi Networks**: Connect to Wi-Fi networks for file transfers and firmware updates.
 
@@ -598,7 +607,7 @@ The **Sleep Screen** setting controls what is displayed when the device goes to 
 | **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading.                     |
 | **Page Overlay**   | Keeps the current reader page visible and draws a sleep wallpaper over it. If no wallpaper is available, the page remains visible while reading. |
 | **Minimal**        | A compact sleep screen based on the Minimal home layout.                                                                                         |
-| **Minimal Stats**  | A compact sleep screen with recent reading stats, on supported devices.                                                                          |
+| **Minimal Stats**  | A compact sleep screen with recent reading stats, on supported devices; falls back to **Minimal** while tracking is off for the device or recent book. |
 | **None**           | A blank screen.                                                                                                                                  |
 
 #### Cover settings
@@ -845,7 +854,10 @@ Available options include:
 - **Show page as QR** – Display a QR code encoding the current reading position.
 - **Delete Book Cache** – Clear the cached layout data for the current book, forcing a re-index on next open.
 - **Sync Progress** – Push or pull reading progress with a KOReader sync server (see [KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)).
-- **Reading Stats** – Open the current book's reading stats.
+- **Reading Stats** – Open the current book's reading stats on supported devices
+  when tracking is enabled for both the device and this book. Use the Reader
+  Menu's **Settings** tab in EPUB, or the Reader Menu in XTC, to pause or resume
+  tracking for this book; saved stats are kept while paused.
 - **Mark Finished / Mark Unfinished** – Toggle whether the current book is marked as finished.
 - **Look Up Word / Lookup History** – Select words on the page and revisit recent per-book lookups when a dictionary is active.
 - **Book Dictionary** – Choose a per-book dictionary override from the reader menu's settings tab.
