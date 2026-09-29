@@ -57,6 +57,7 @@
 - Footnote choices can be selected directly on the reading page, with a list fallback for links without a visible target.
 - Changing global font or page layout settings from the pull-down panel on touch devices now updates the open book when it inherits those settings.
 - KOReader authentication now rejects unexpectedly large server responses to avoid crashes.
+- EPUBs rewritten with alternate XML namespace prefixes now open normally instead of jumping straight to End of Book.
 
 ## [v1.6.0] - 2026-09-21
 
