@@ -15,6 +15,7 @@
 - In-reader menu for X3/X4/X4 Classic have been updated to a modified version of the in-reader menu for touch devices
 - Chapter pages and book progress information is displayed in the frontlight drawer when in the reader for X4 Pro
 - Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
+- Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
 
 ### Changed
 
