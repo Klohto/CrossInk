@@ -21,6 +21,7 @@
 #include "ClockOffsetActivity.h"
 #include "ClockSyncActivity.h"
 #include "CrossPointSettings.h"
+#include "DeviceCapabilities.h"
 #include "FontSelectionActivity.h"
 #if CROSSINK_SCALABLE_FONTS
 #include "TtfRenderOptionsActivity.h"
@@ -950,34 +951,41 @@ void SettingsActivity::loop() {
     }
     requestUpdate();
   };
-  buttonNavigator.onNextRelease([this, &moveSelection] {
-    const int next = isFileBrowserView() ? (selectedSettingIndex >= settingsCount ? 1 : selectedSettingIndex + 1)
-                                         : ButtonNavigator::nextIndex(selectedSettingIndex, settingsCount + 1);
-    moveSelection(next, true);
-  });
-  buttonNavigator.onPreviousRelease([this, &moveSelection] {
-    const int previous = isFileBrowserView() ? (selectedSettingIndex <= 1 ? settingsCount : selectedSettingIndex - 1)
-                                             : ButtonNavigator::previousIndex(selectedSettingIndex, settingsCount + 1);
-    moveSelection(previous, false);
-  });
+  const auto up = mappedInput.menuButton(MappedInputManager::Button::Up);
+  const auto down = mappedInput.menuButton(MappedInputManager::Button::Down);
+  const auto navigateRows = [this, &moveSelection](const bool forward) {
+    const int index = isFileBrowserView()
+                          ? (forward ? (selectedSettingIndex >= settingsCount ? 1 : selectedSettingIndex + 1)
+                                     : (selectedSettingIndex <= 1 ? settingsCount : selectedSettingIndex - 1))
+                          : (forward ? ButtonNavigator::nextIndex(selectedSettingIndex, settingsCount + 1)
+                                     : ButtonNavigator::previousIndex(selectedSettingIndex, settingsCount + 1));
+    moveSelection(index, forward);
+  };
+  const auto previousButtons = isFileBrowserView() ? ButtonNavigator::getPreviousButtons() : std::array{up, up};
+  const auto nextButtons = isFileBrowserView() ? ButtonNavigator::getNextButtons() : std::array{down, down};
+  buttonNavigator.onRelease(nextButtons, [&] { navigateRows(true); });
+  buttonNavigator.onRelease(previousButtons, [&] { navigateRows(false); });
 
   if (!isFileBrowserView()) {
-    buttonNavigator.onNextContinuous([this, &hasChangedCategory] {
+    buttonNavigator.onContinuous(nextButtons, [&] { navigateRows(true); });
+    buttonNavigator.onContinuous(previousButtons, [&] { navigateRows(false); });
+    const auto changeCategory = [this, &hasChangedCategory](const bool forward) {
       hasChangedCategory = true;
       showSettingSelection = true;
-      enterCategory(ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount));
+      enterCategory(forward ? ButtonNavigator::nextIndex(selectedCategoryIndex, categoryCount)
+                            : ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount));
       requestUpdate();
-    });
-
-    buttonNavigator.onPreviousContinuous([this, &hasChangedCategory] {
-      hasChangedCategory = true;
-      showSettingSelection = true;
-      enterCategory(ButtonNavigator::previousIndex(selectedCategoryIndex, categoryCount));
-      requestUpdate();
-    });
+    };
+    const auto left = mappedInput.menuButton(MappedInputManager::Button::Left);
+    const auto right = mappedInput.menuButton(MappedInputManager::Button::Right);
+    buttonNavigator.onRelease({right, right}, [&] { changeCategory(true); });
+    buttonNavigator.onRelease({left, left}, [&] { changeCategory(false); });
+    buttonNavigator.onContinuous({right, right}, [&] { changeCategory(true); });
+    buttonNavigator.onContinuous({left, left}, [&] { changeCategory(false); });
   }
 
   if (hasChangedCategory) {
+    topIndex = 0;
     selectedSettingIndex = (selectedSettingIndex == 0) ? 0 : 1;
     setCurrentSettingsForCategory();
     // Advance past any leading section headers
@@ -1615,8 +1623,10 @@ void SettingsActivity::render(RenderLock&&) {
                  ? tr(STR_SELECT)
                  : tr(STR_TOGGLE));
 
-  const auto labels =
-      mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), confirmLabel, tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const bool horizontalFront = !isFileBrowserView() && !deviceUsesHorizontalSideButtonsForMenus(gpio);
+  const auto labels = mappedInput.mapLabels(mappedInput.withBackArrow(tr(STR_BACK)), confirmLabel,
+                                            (horizontalFront ? tr(STR_DIR_LEFT) : tr(STR_DIR_UP)),
+                                            (horizontalFront ? tr(STR_DIR_RIGHT) : tr(STR_DIR_DOWN)));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   // Always use standard refresh for settings screen

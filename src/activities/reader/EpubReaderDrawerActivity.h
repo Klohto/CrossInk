@@ -42,9 +42,13 @@ class EpubReaderDrawerActivity final : public Activity {
       void* endGlobalSettingsEditContext = nullptr, const char* dictionaryFontFamilyName = nullptr,
       uint8_t dictionaryFontPointSize = 0, bool hasDictionaryFontOverride = false,
       ReaderOptionsActivity::DictionaryFontChangedCallback dictionaryFontChangedCallback = nullptr,
-      void* dictionaryFontChangedContext = nullptr, ReaderDrawerState initialState = {},
+      void* dictionaryFontChangedContext = nullptr,
+      ReaderDrawerState initialState = initialReaderDrawerState(CROSSINK_APP_CAP_TOUCH),
       std::unique_ptr<EpubReaderPreviewModel> ownedPreviewModel = nullptr);
 
+#ifdef SIMULATOR
+  const ReaderDrawerState& simulatorState() const { return state; }
+#endif
   void onEnter() override;
   void onExit() override;
   void loop() override;

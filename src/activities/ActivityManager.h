@@ -180,6 +180,7 @@ class ActivityManager {
   bool hasActivityNamed(const char* activityName) const;
 #ifdef SIMULATOR
   bool isCurrentActivityNamed(const char* activityName) const;
+  Activity* simulatorCurrentActivity() const { return currentActivity.get(); }
 #endif
   bool canSnapshotForSleepOverlay() const;
   bool requestManualReaderRefresh();

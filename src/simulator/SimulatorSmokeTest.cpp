@@ -38,6 +38,7 @@
 #include "activities/reader/ReaderUtils.h"
 #include "activities/reader/SideButtonShortcuts.h"
 #include "activities/settings/QuickActionsActivity.h"
+#include "activities/settings/SettingsActivity.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "simulator/SimulatorHomeKeyInput.h"
@@ -99,6 +100,8 @@ class SimulatorSmokeTest {
     TouchDown,
     TouchMove,
     TouchRelease,
+    AssertReaderMenu,
+    AssertSettingsNavigation,
     AssertActivity,
     Render
   };
@@ -1179,11 +1182,27 @@ class SimulatorSmokeTest {
           inputScript.clear();
           scriptIndex = 0;
           inputCompletionStep = SmokeStep::SideButtons;
-          addTap(MappedInputManager::Button::Confirm);  // Reader tab
-          addTap(MappedInputManager::Button::Confirm);  // Controls tab
-          addTap(MappedInputManager::Button::Down);     // Power Button
-          addTap(MappedInputManager::Button::Down);     // Front Buttons
-          addTap(MappedInputManager::Button::Down);     // Side Buttons
+          const auto down = mappedInputManager.menuButton(MappedInputManager::Button::Down);
+          const auto up = mappedInputManager.menuButton(MappedInputManager::Button::Up);
+          const auto left = mappedInputManager.menuButton(MappedInputManager::Button::Left);
+          const auto right = mappedInputManager.menuButton(MappedInputManager::Button::Right);
+          addTap(right);
+          inputScript.push_back(render("Settings Right selects Reader tab", 3));
+          inputScript.push_back(assertSettingsNavigation(1, 0));
+          addTap(down);
+          inputScript.push_back(render("Settings Down selects first row", 3));
+          inputScript.push_back(assertSettingsNavigation(1, 1));
+          addTap(left);
+          inputScript.push_back(render("Settings Left switches tabs while a row is focused", 3));
+          inputScript.push_back(assertSettingsNavigation(0, 1));
+          addTap(up);
+          inputScript.push_back(render("Settings Up returns to tab band", 3));
+          inputScript.push_back(assertSettingsNavigation(0, 0));
+          addTap(right);  // Reader tab
+          addTap(right);  // Controls tab
+          addTap(down);   // Power Button
+          addTap(down);   // Front Buttons
+          addTap(down);   // Side Buttons
           addTap(MappedInputManager::Button::Confirm);
           inputScript.push_back(render("Side Button Settings", 250));
           step = SmokeStep::ReaderInput;
@@ -1258,6 +1277,20 @@ class SimulatorSmokeTest {
     }
   }
 
+  static ScriptAction assertReaderMenu(const ReaderDrawerTab tab, const ReaderDrawerPane pane, const int selected) {
+    return {ScriptActionType::AssertReaderMenu,
+            MappedInputManager::Button::Back,
+            nullptr,
+            selected,
+            static_cast<int>(tab),
+            static_cast<int>(pane)};
+  }
+
+  static ScriptAction assertSettingsNavigation(const int category, const int selected) {
+    return {
+        ScriptActionType::AssertSettingsNavigation, MappedInputManager::Button::Back, nullptr, 0, category, selected};
+  }
+
   static ScriptAction press(MappedInputManager::Button button) {
     return {ScriptActionType::Press, button, nullptr, 0, 0, 0};
   }
@@ -1318,6 +1351,10 @@ class SimulatorSmokeTest {
     return {ScriptActionType::Render, MappedInputManager::Button::Back, label, framesToSettle, 0, 0};
   }
 
+  static ScriptAction assertActivity(const char* name) {
+    return {ScriptActionType::AssertActivity, MappedInputManager::Button::Back, name, 0, 0, 0};
+  }
+
 #if CROSSINK_APP_CAP_TOUCH
   static ScriptAction touchDown(const int x, const int y) {
     return {ScriptActionType::TouchDown, MappedInputManager::Button::Back, nullptr, 0, x, y};
@@ -1328,9 +1365,7 @@ class SimulatorSmokeTest {
   static ScriptAction touchRelease(const int x, const int y) {
     return {ScriptActionType::TouchRelease, MappedInputManager::Button::Back, nullptr, 0, x, y};
   }
-  static ScriptAction assertActivity(const char* name) {
-    return {ScriptActionType::AssertActivity, MappedInputManager::Button::Back, name, 0, 0, 0};
-  }
+
 #endif
 
   void addTap(MappedInputManager::Button button) {
@@ -1600,6 +1635,9 @@ class SimulatorSmokeTest {
       return;
     }
 #endif
+    const auto menuDown = mappedInputManager.menuButton(MappedInputManager::Button::Down);
+    const auto menuLeft = mappedInputManager.menuButton(MappedInputManager::Button::Left);
+    const auto menuRight = mappedInputManager.menuButton(MappedInputManager::Button::Right);
     for (int i = 0; i < turns; i++) {
       addTap(MappedInputManager::Button::PageForward);
       inputScript.push_back(render("Reader after page forward", 4));
@@ -1607,21 +1645,50 @@ class SimulatorSmokeTest {
 
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Reader Menu opened from EPUB", 4));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::More, ReaderDrawerPane::Root, 0));
+    // Select retains its original tab-band behavior, including wraparound.
+    for (const auto tab : {ReaderDrawerTab::Location, ReaderDrawerTab::Settings, ReaderDrawerTab::Font,
+                           ReaderDrawerTab::Layout, ReaderDrawerTab::More}) {
+      addTap(MappedInputManager::Button::Confirm);
+      inputScript.push_back(render("Reader Menu Select advances tab", 3));
+      inputScript.push_back(assertReaderMenu(tab, ReaderDrawerPane::Root, 0));
+    }
+    addTap(menuLeft);
+    addTap(menuLeft);
+    inputScript.push_back(render("Reader Menu Font tab reached with Left", 3));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Font, ReaderDrawerPane::Root, 0));
+    addTap(menuLeft);
+    inputScript.push_back(render("Reader Menu wraps left to Settings", 3));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Settings, ReaderDrawerPane::Root, 0));
+    addTap(menuRight);
+    inputScript.push_back(render("Reader Menu wraps right to Font", 3));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Font, ReaderDrawerPane::Root, 0));
 
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     inputScript.push_back(render("Reader Menu first row focused", 3));
+    addTap(menuDown);
+    inputScript.push_back(render("Reader Menu Down moves row focus", 3));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Font, ReaderDrawerPane::Root, 1));
+    addTap(menuRight);
+    inputScript.push_back(render("Reader Menu Right switches tab while a row is focused", 3));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Layout, ReaderDrawerPane::Root, 0));
+    addTap(menuLeft);
+    addTap(menuDown);
+    inputScript.push_back(render("Reader Menu first Font row focused again", 3));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Font, ReaderDrawerPane::Root, 0));
 
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Reader Font opened from Reader Menu", 4));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Font, ReaderDrawerPane::ReaderFont, 0));
 
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     inputScript.push_back(render("Font Size selected", 3));
 
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("Font Size choices opened", 3));
 
 #if CROSSINK_APP_READER_SAMPLE_PREVIEW
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("C3 font size paragraph preview", 4));
 #endif
@@ -1632,7 +1699,7 @@ class SimulatorSmokeTest {
 #if CROSSINK_APP_READER_SAMPLE_PREVIEW
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("C3 font family picker", 4));
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("C3 font family paragraph preview", 4));
     addTap(MappedInputManager::Button::Back);
@@ -1643,16 +1710,16 @@ class SimulatorSmokeTest {
     inputScript.push_back(render("Reader Menu tab focus restored", 4));
 
 #if CROSSINK_APP_READER_SAMPLE_PREVIEW
-    addTap(MappedInputManager::Button::Down);
-    addTap(MappedInputManager::Button::Down);
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
+    addTap(menuDown);
+    addTap(menuDown);
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("C3 spacing paragraph preview", 4));
     addTap(MappedInputManager::Button::Confirm);
     addTap(MappedInputManager::Button::Down);
     inputScript.push_back(render("C3 line spacing adjusted", 4));
     addTap(MappedInputManager::Button::Back);
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     addTap(MappedInputManager::Button::Confirm);
     addTap(MappedInputManager::Button::Down);
     inputScript.push_back(render("C3 word spacing adjusted", 4));
@@ -1661,18 +1728,19 @@ class SimulatorSmokeTest {
     inputScript.push_back(render("C3 font tab restored", 3));
 #endif
 
-    addTap(MappedInputManager::Button::Confirm);
+    addTap(menuRight);
     inputScript.push_back(render("Reader Menu advanced to next tab", 4));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::Layout, ReaderDrawerPane::Root, 0));
 
 #if CROSSINK_APP_READER_SAMPLE_PREVIEW
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     addTap(MappedInputManager::Button::Confirm);
     inputScript.push_back(render("C3 margin paragraph preview", 4));
     addTap(MappedInputManager::Button::Confirm);
     addTap(MappedInputManager::Button::Down);
     inputScript.push_back(render("C3 vertical margin adjusted", 4));
     addTap(MappedInputManager::Button::Back);
-    addTap(MappedInputManager::Button::Down);
+    addTap(menuDown);
     addTap(MappedInputManager::Button::Confirm);
     addTap(MappedInputManager::Button::Down);
     inputScript.push_back(render("C3 horizontal margin adjusted", 4));
@@ -1683,6 +1751,12 @@ class SimulatorSmokeTest {
 
     addTap(MappedInputManager::Button::Back);
     inputScript.push_back(render("Reader after closing Reader Menu", 4));
+    inputScript.push_back(assertActivity("EpubReader"));
+    addTap(MappedInputManager::Button::Confirm);
+    inputScript.push_back(render("Reader Menu reopened on More", 4));
+    inputScript.push_back(assertReaderMenu(ReaderDrawerTab::More, ReaderDrawerPane::Root, 0));
+    addTap(MappedInputManager::Button::Back);
+    inputScript.push_back(render("Reader restored after checking default tab", 4));
 
     LOG_INF("SMOKE", "Running reader input script with %d page turn(s)", turns);
   }
@@ -1818,6 +1892,25 @@ class SimulatorSmokeTest {
         mappedInputManager.simulatorInjectTouchRelease(action.x, action.y);
 #endif
         break;
+      case ScriptActionType::AssertReaderMenu: {
+        if (!activityManager.isCurrentActivityNamed("EpubReaderDrawer"))
+          fail("Expected reader menu for navigation assertion");
+        const auto* drawer = static_cast<EpubReaderDrawerActivity*>(activityManager.simulatorCurrentActivity());
+        const auto& state = drawer->simulatorState();
+        if (static_cast<int>(state.tab) != action.x || static_cast<int>(state.pane) != action.y ||
+            state.selectedIndex != action.settleFrames)
+          fail("Reader menu navigation mismatch: tab=%d pane=%d row=%d, expected %d/%d/%d", static_cast<int>(state.tab),
+               static_cast<int>(state.pane), state.selectedIndex, action.x, action.y, action.settleFrames);
+        break;
+      }
+      case ScriptActionType::AssertSettingsNavigation: {
+        if (!activityManager.isCurrentActivityNamed("Settings")) fail("Expected settings for navigation assertion");
+        const auto* settings = static_cast<SettingsActivity*>(activityManager.simulatorCurrentActivity());
+        if (settings->simulatorCategoryIndex() != action.x || settings->simulatorSelectedIndex() != action.y)
+          fail("Settings navigation mismatch: category=%d row=%d, expected %d/%d", settings->simulatorCategoryIndex(),
+               settings->simulatorSelectedIndex(), action.x, action.y);
+        break;
+      }
       case ScriptActionType::AssertActivity:
         if (!activityManager.isCurrentActivityNamed(action.label)) fail("Expected current activity: %s", action.label);
         break;
