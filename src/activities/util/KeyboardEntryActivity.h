@@ -37,28 +37,6 @@ class KeyboardEntryActivity : public Activity {
   uint8_t inputPollDelayMs() const override { return mappedInput.hasTouchHardware() ? 2 : 10; }
 
  private:
-#if CROSSINK_APP_CAP_TOUCH
-  // Diagnostic counters only; emit after typing, never from the polling path.
-  struct TouchDiagnostics {
-    uint32_t contacts = 0;
-    uint32_t multiContacts = 0;
-    uint32_t releases = 0;
-    uint32_t sdkTaps = 0;
-    uint32_t mappedTaps = 0;
-    uint32_t keyActions = 0;
-    uint32_t longActions = 0;
-    uint32_t insertions = 0;
-    uint32_t lastLoopMs = 0;
-    uint32_t maxLoopGapMs = 0;
-    uint8_t previousContacts = 0;
-    bool loopSeen = false;
-  } touchDiagnostics;
-  // Render task writes these; the main task reports them on exit.
-  std::atomic<uint32_t> diagnosticRenders{0};
-  std::atomic<uint32_t> diagnosticMaxDrawMs{0};
-  std::atomic<uint32_t> diagnosticMaxDisplayMs{0};
-  void sampleTouchDiagnostics();
-#endif
   std::string title;
   std::string text;
   size_t maxLength;

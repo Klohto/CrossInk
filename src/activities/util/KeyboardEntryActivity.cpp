@@ -140,10 +140,6 @@ void KeyboardEntryActivity::onEnter() {
 #if CROSSINK_APP_CAP_TOUCH
   pendingFeedback = 0;
   feedbackSequence = 0;
-  touchDiagnostics = {};
-  diagnosticRenders = 0;
-  diagnosticMaxDrawMs = 0;
-  diagnosticMaxDisplayMs = 0;
 #endif
   cursorPos = text.length();
   layoutId = inputType == InputType::Url ? fui::KeyboardLayoutId::QwertyEn : keyboard_layouts::startingLayout();
@@ -172,25 +168,7 @@ void KeyboardEntryActivity::onEnter() {
   requestUpdate();
 }
 
-void KeyboardEntryActivity::onExit() {
-#if CROSSINK_APP_CAP_TOUCH
-  if (mappedInput.hasTouchHardware()) {
-    const auto& d = touchDiagnostics;
-    LOG_INF("KBD", "touch diagnostic v1: contacts=%lu multi=%lu releases=%lu sdk_taps=%lu mapped_taps=%lu",
-            static_cast<unsigned long>(d.contacts), static_cast<unsigned long>(d.multiContacts),
-            static_cast<unsigned long>(d.releases), static_cast<unsigned long>(d.sdkTaps),
-            static_cast<unsigned long>(d.mappedTaps));
-    LOG_INF("KBD", "actions=%lu long_actions=%lu insertions=%lu max_loop_gap_ms=%lu",
-            static_cast<unsigned long>(d.keyActions), static_cast<unsigned long>(d.longActions),
-            static_cast<unsigned long>(d.insertions), static_cast<unsigned long>(d.maxLoopGapMs));
-    LOG_INF("KBD", "renders=%lu max_draw_ms=%lu max_display_ms=%lu",
-            static_cast<unsigned long>(diagnosticRenders.load()),
-            static_cast<unsigned long>(diagnosticMaxDrawMs.load()),
-            static_cast<unsigned long>(diagnosticMaxDisplayMs.load()));
-  }
-#endif
-  Activity::onExit();
-}
+void KeyboardEntryActivity::onExit() { Activity::onExit(); }
 
 #if CROSSINK_APP_CAP_TOUCH
 void KeyboardEntryActivity::showTouchFeedback(const int16_t value) {
@@ -200,22 +178,6 @@ void KeyboardEntryActivity::showTouchFeedback(const int16_t value) {
   requestUpdate();
 }
 
-void KeyboardEntryActivity::sampleTouchDiagnostics() {
-  if (!mappedInput.hasTouchHardware()) return;
-  auto& d = touchDiagnostics;
-  const uint32_t now = millis();
-  if (d.loopSeen) d.maxLoopGapMs = std::max(d.maxLoopGapMs, now - d.lastLoopMs);
-  d.loopSeen = true;
-  d.lastLoopMs = now;
-  const uint8_t contacts = gpio.getTouchSnapshot().reportedCount;
-  if (contacts && !d.previousContacts) ++d.contacts;
-  if (contacts > 1 && d.previousContacts <= 1) ++d.multiContacts;
-  d.previousContacts = contacts;
-  if (gpio.wasTouchReleased()) ++d.releases;
-  float nx = 0;
-  float ny = 0;
-  if (gpio.wasTouchTap(nx, ny)) ++d.sdkTaps;
-}
 #endif
 
 const fui::KeyboardLayout& KeyboardEntryActivity::currentLayout() const {
@@ -317,9 +279,6 @@ void KeyboardEntryActivity::insertUtf8(const char* out) {
   if (cursorPos > text.length()) cursorPos = text.length();
   text.insert(cursorPos, out, n);
   cursorPos += n;
-#if CROSSINK_APP_CAP_TOUCH
-  ++touchDiagnostics.insertions;
-#endif
 }
 
 bool KeyboardEntryActivity::backspaceUtf8() {
@@ -609,7 +568,6 @@ fui::Rect KeyboardEntryActivity::keyboardRect() const {
 
 void KeyboardEntryActivity::loop() {
 #if CROSSINK_APP_CAP_TOUCH
-  sampleTouchDiagnostics();
   if (TouchHeaderBackButton::wasTapped(mappedInput, renderer)) {
     onCancel();
     return;
@@ -619,7 +577,6 @@ void KeyboardEntryActivity::loop() {
   int ty = 0;
 
   if (mappedInput.wasScreenTapped(tx, ty)) {
-    ++touchDiagnostics.mappedTaps;
     size_t touchedCursorPos = 0;
     const InputFieldTouchTarget inputTarget = inputFieldTouchTargetFromPoint(tx, ty, touchedCursorPos);
     if (inputTarget == InputFieldTouchTarget::PasswordToggle) {
@@ -665,8 +622,6 @@ void KeyboardEntryActivity::loop() {
       showTouchFeedback(interactions.publishedData()[interactions.activeIndex()].value);
     }
     if (result.event) {
-      ++touchDiagnostics.keyActions;
-      if (result.event.longPress) ++touchDiagnostics.longActions;
       buttonSelectionVisible = false;
       showTouchFeedback(result.event.value);
       syncSelectionToValue(result.event.value);
@@ -842,7 +797,6 @@ void KeyboardEntryActivity::loop() {
 
 void KeyboardEntryActivity::render(RenderLock&&) {
 #if CROSSINK_APP_CAP_TOUCH
-  const uint32_t diagnosticDrawStart = millis();
   const uint32_t feedback = pendingFeedback.load();
 #endif
   renderer.clearScreen();
@@ -1203,15 +1157,8 @@ void KeyboardEntryActivity::render(RenderLock&&) {
 
   GUI.drawSideButtonHints(renderer, ">", "<");
 
-#if CROSSINK_APP_CAP_TOUCH
-  const uint32_t diagnosticDisplayStart = millis();
-  diagnosticMaxDrawMs = std::max(diagnosticMaxDrawMs.load(), diagnosticDisplayStart - diagnosticDrawStart);
-#endif
   renderer.displayBuffer();
 #if CROSSINK_APP_CAP_TOUCH
-  diagnosticMaxDisplayMs =
-      std::max(diagnosticMaxDisplayMs.load(), static_cast<uint32_t>(millis()) - diagnosticDisplayStart);
-  ++diagnosticRenders;
   // Only acknowledge the frame actually displayed. A newer press (including
   // the same key again) must survive an older refresh completing.
   uint32_t expected = feedback;
