@@ -651,6 +651,7 @@ bool MappedInputManager::getEdgeSlideProgress(EdgeSlideProgress& progress) {
         (edgeSlideSide == EdgeSlide::RightUp && x < width - band)) {
       edgeSlideSide = EdgeSlide::None;
       progress.finished = true;
+      progress.leftEdgeBand = true;
       return true;
     } else {
       edgeSlideLastX = x;
@@ -683,6 +684,7 @@ bool MappedInputManager::getEdgeSlideProgress(EdgeSlideProgress& progress) {
   const EdgeSlide side = edgeSlideSide;
   if ((side == EdgeSlide::LeftUp && x >= band) || (side == EdgeSlide::RightUp && x < width - band)) {
     edgeSlideSide = EdgeSlide::None;
+    progress.leftEdgeBand = true;
     return true;
   }
   progress.direction = ::EdgeSlide::directionFor(edgeSlideStartX, edgeSlideStartY, x, y, width, height);

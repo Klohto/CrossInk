@@ -395,10 +395,13 @@ bool applyEdgeSlideAction(Activity& activity, MappedInputManager& mappedInput, A
       break;
   }
   if (state.active) {
-    const int amount = state.direction == static_cast<int>(progress.direction)
-                           ? SwipeAdjustment::amount(progress.distance, mappedInput.getRenderer().getScreenHeight())
-                           : 0;
-    updateLiveLightSwipe(activity, activityManager, state, amount);
+    // Drifting inward ends the slide at its last applied value.
+    if (!progress.leftEdgeBand) {
+      const int amount = state.direction == static_cast<int>(progress.direction)
+                             ? SwipeAdjustment::amount(progress.distance, mappedInput.getRenderer().getScreenHeight())
+                             : 0;
+      updateLiveLightSwipe(activity, activityManager, state, amount);
+    }
     if (progress.finished) {
       mappedInput.suppressCurrentTouchContact();
       finishLiveLightSwipe(state, activityManager);

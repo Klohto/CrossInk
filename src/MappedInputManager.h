@@ -20,6 +20,7 @@ class MappedInputManager {
     EdgeSlide direction = EdgeSlide::None;
     int distance = 0;
     bool finished = false;
+    bool leftEdgeBand = false;
   };
 
   struct CompletedSwipe {
