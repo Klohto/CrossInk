@@ -13,6 +13,7 @@
 #include <freertos/task.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "FontCacheManager.h"
 #include "GlyphBitmap.h"

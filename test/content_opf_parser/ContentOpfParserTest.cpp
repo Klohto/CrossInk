@@ -7,6 +7,11 @@
 
 namespace {
 
+// The parser retains references to both paths, so they must outlive each instance.
+const std::string kEmptyPath;
+const std::string kMissingCachePath = "/missing-cache";
+const std::string kContentPath = "OPS/";
+
 void parse(ContentOpfParser& parser, const std::string& xml) {
   ASSERT_TRUE(parser.setup());
   EXPECT_EQ(parser.write(reinterpret_cast<const uint8_t*>(xml.data()), xml.size()), xml.size());
@@ -17,7 +22,7 @@ void parse(ContentOpfParser& parser, const std::string& xml) {
 TEST(ContentOpfParserMetadata, EntityCallbackDoesNotSplitOneAuthor) {
   const std::string xml =
       R"(<package xmlns:dc="http://purl.org/dc/elements/1.1/"><metadata><dc:creator>&#201;mile Zola</dc:creator></metadata></package>)";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
 
   parse(parser, xml);
 
@@ -28,7 +33,7 @@ TEST(ContentOpfParserMetadata, ClampsOversizedMetadataTextInsteadOfGrowingUnboun
   const std::string hugeTitle(64 * 1024, 'A');
   const std::string xml = "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>" + hugeTitle +
                           " tail</dc:title></metadata></package>";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
 
   parse(parser, xml);
 
@@ -40,7 +45,7 @@ TEST(ContentOpfParserMetadata, ClampDoesNotSplitUtf8Codepoints) {
   const std::string prefix(511, 'A');
   const std::string xml = "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:title>" + prefix +
                           "\xC3\xA9&amp;tail</dc:title></metadata></package>";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
 
   parse(parser, xml);
 
@@ -54,7 +59,7 @@ TEST(ContentOpfParserMetadata, ClampNeverOvershootsAtAMultiCreatorSeparatorBound
   const std::string firstAuthor(511, 'A');
   const std::string xml = "<package xmlns:dc=\"http://purl.org/dc/elements/1.1/\"><metadata><dc:creator>" +
                           firstAuthor + "</dc:creator><dc:creator>B</dc:creator></metadata></package>";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
 
   parse(parser, xml);
 
@@ -71,7 +76,7 @@ TEST(ContentOpfParserMetadata, SeparatesCreatorElementsAndCollapsesXmlWhitespace
 Octavia E. Butler
 </dc:creator>
   </metadata></package>)";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
 
   parse(parser, xml);
 
@@ -86,7 +91,7 @@ TEST(ContentOpfParserMetadata, ReadsCalibreSeriesAndFirstSubject) {
     <dc:subject> Fantasy &amp; Adventure </dc:subject>
     <dc:subject>Young adult</dc:subject>
   </metadata></package>)";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
   parse(parser, xml);
   EXPECT_EQ(parser.series, "Earthsea");
   EXPECT_EQ(parser.seriesIndex, "2.5");
@@ -99,7 +104,7 @@ TEST(ContentOpfParserMetadata, DistinguishesEpubThreeSeriesFromSets) {
     <meta refines="#collection" property="collection-type">series</meta>
     <meta refines="#collection" property="group-position"> 3 </meta>
   </metadata></package>)";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
   parse(parser, xml);
   EXPECT_EQ(parser.series, "Earthsea");
   EXPECT_EQ(parser.seriesIndex, "3");
@@ -109,7 +114,7 @@ TEST(ContentOpfParserMetadata, DistinguishesEpubThreeSeriesFromSets) {
     <meta refines="#collection" property="collection-type">set</meta>
     <meta refines="#collection" property="group-position">1</meta>
   </metadata></package>)";
-  ContentOpfParser setParser("", "", setXml.size(), nullptr);
+  ContentOpfParser setParser(kEmptyPath, kEmptyPath, setXml.size(), nullptr);
   parse(setParser, setXml);
   EXPECT_TRUE(setParser.series.empty());
   EXPECT_TRUE(setParser.seriesIndex.empty());
@@ -121,7 +126,7 @@ TEST(ContentOpfParserMetadata, DistinguishesEpubThreeSeriesFromSets) {
     <meta refines="#series" property="collection-type">series</meta>
     <meta refines="#series" property="group-position">2</meta>
   </metadata></package>)";
-  ContentOpfParser mixedParser("", "", mixedXml.size(), nullptr);
+  ContentOpfParser mixedParser(kEmptyPath, kEmptyPath, mixedXml.size(), nullptr);
   parse(mixedParser, mixedXml);
   EXPECT_EQ(mixedParser.series, "Earthsea");
   EXPECT_EQ(mixedParser.seriesIndex, "2");
@@ -135,7 +140,7 @@ TEST(ContentOpfParserMetadata, StopsBeforeManifestWithoutOpeningTemporaryStorage
   </metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest>
   </package>)";
   Storage = {};
-  ContentOpfParser parser("/missing-cache", "OPS/", xml.size(), nullptr, /*collectCssFiles=*/true,
+  ContentOpfParser parser(kMissingCachePath, kContentPath, xml.size(), nullptr, /*collectCssFiles=*/true,
                           /*metadataOnly=*/true);
 
   ASSERT_TRUE(parser.setup());
@@ -151,7 +156,7 @@ TEST(ContentOpfParserMetadata, NeverEntersManifestWhenMetadataElementIsMissing) 
   const std::string xml =
       R"(<package><manifest><item id="chapter" href="chapter.xhtml"/></manifest><spine/></package>)";
   Storage = {};
-  ContentOpfParser parser("/missing-cache", "OPS/", xml.size(), nullptr, /*collectCssFiles=*/true,
+  ContentOpfParser parser(kMissingCachePath, kContentPath, xml.size(), nullptr, /*collectCssFiles=*/true,
                           /*metadataOnly=*/true);
 
   ASSERT_TRUE(parser.setup());
@@ -201,7 +206,7 @@ TEST(ContentOpfParserNamespaces, MetadataOnlyStopsBeforePrefixedManifest) {
     <ns0:manifest><ns0:item id="chapter" href="chapter.xhtml"/></ns0:manifest>
   </ns0:package>)";
   Storage = {};
-  ContentOpfParser parser("", "", xml.size(), nullptr, true, true);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr, true, true);
   ASSERT_TRUE(parser.setup());
   EXPECT_LT(parser.write(reinterpret_cast<const uint8_t*>(xml.data()), xml.size()), xml.size());
   EXPECT_EQ(parser.title, "Sample");
@@ -214,7 +219,7 @@ TEST(ContentOpfParserNamespaces, MetadataOnlySkipsPrefixedManifestWithoutMetadat
     <ns0:manifest><ns0:item id="chapter" href="chapter.xhtml"/></ns0:manifest>
   </ns0:package>)";
   Storage = {};
-  ContentOpfParser parser("", "", xml.size(), nullptr, true, true);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr, true, true);
   ASSERT_TRUE(parser.setup());
   EXPECT_LT(parser.write(reinterpret_cast<const uint8_t*>(xml.data()), xml.size()), xml.size());
   EXPECT_EQ(Storage.writeOpens, 0);
@@ -228,7 +233,7 @@ TEST(ContentOpfParserNamespaces, IgnoresUnrelatedNamespacesWithMatchingLocalName
     <other:manifest><other:item id="wrong" href="wrong.css" media-type="text/css"/></other:manifest>
     <manifest><item id="right" href="right.css" media-type="text/css"/></manifest>
   </package>)";
-  ContentOpfParser parser("", "", xml.size(), nullptr);
+  ContentOpfParser parser(kEmptyPath, kEmptyPath, xml.size(), nullptr);
   parse(parser, xml);
   EXPECT_EQ(parser.title, "Right title");
   ASSERT_EQ(parser.cssFiles.size(), 1u);

@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
+// Include standard headers before the class/private macros below: libstdc++
+// templates declared with `class` do not compile if first parsed under them.
+#include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <string>
 #include <utility>
