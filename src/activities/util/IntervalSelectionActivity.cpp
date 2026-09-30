@@ -1,5 +1,6 @@
 #include "IntervalSelectionActivity.h"
 
+#include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <HalGPIO.h>
 #include <I18n.h>
@@ -191,9 +192,14 @@ void IntervalSelectionActivity::buildSliderScreen(UiApp::ScreenType& screen) {
   const int16_t controlTopInset = static_cast<int16_t>(lineHeight + READER_SLIDER_SCALE_GAP);
   const int16_t top = std::max<int16_t>(
       0, static_cast<int16_t>((screen.body().height - READER_SLIDER_CONTROL_HEIGHT) / 2 - controlTopInset));
+  const bool marginPreview = readerPreviewSetting == ReaderPreviewSetting::VerticalMargin ||
+                             readerPreviewSetting == ReaderPreviewSetting::HorizontalMargin;
   screen.spacer(readerPreviewSetting == ReaderPreviewSetting::None ? top : 0);
-  const fui::Rect row = screen.takeTop(rowHeight);
-  if (readerPreviewSetting != ReaderPreviewSetting::None) {
+  const fui::Rect row = marginPreview ? screen.takeBottom(rowHeight) : screen.takeTop(rowHeight);
+  if (marginPreview) {
+    readerPreviewArea =
+        Rect{touchScreen.x, contentTop, touchScreen.width, std::max(0, row.y - metrics.verticalSpacing - contentTop)};
+  } else if (readerPreviewSetting != ReaderPreviewSetting::None) {
     const int previewTop = row.bottom() + metrics.verticalSpacing;
     readerPreviewArea = Rect{touchScreen.x, previewTop, touchScreen.width, std::max(0, contentBottom - previewTop)};
   }
@@ -280,6 +286,27 @@ void IntervalSelectionActivity::onEnter() {
     }
     RenderLock lock;
     sdFontSystem.ensureLoaded(renderer);
+    if (auto* fcm = renderer.getFontCacheManager(); previewModel && fcm) {
+      // Cold SD bitmap fonts need their glyphs prepared before measuring or drawing the sample.
+      const char* previewText = READER_PREVIEW_PARAGRAPH;
+      std::unique_ptr<char[]> guideText;
+      if (SETTINGS.guideReadingEnabled) {
+        constexpr char guideDot[] = "\xc2\xb7";
+        constexpr size_t guideTextSize = sizeof(READER_PREVIEW_PARAGRAPH) + sizeof(guideDot) - 1;
+        // Keep the combined paragraph off the activity's limited stack; free it after prewarming.
+        guideText = makeUniqueNoThrow<char[]>(guideTextSize);
+        if (guideText) {
+          snprintf(guideText.get(), guideTextSize, "%s%s", READER_PREVIEW_PARAGRAPH, guideDot);
+          previewText = guideText.get();
+        } else {
+          LOG_ERR("INTV", "Could not allocate guide reading preview text");
+        }
+      }
+      const uint8_t styles = SETTINGS.focusReadingEnabled ? 0x03 : 0x01;
+      if (!fcm->prewarmCache(SETTINGS.getReaderFontId(), previewText, styles)) {
+        LOG_ERR("INTV", "Could not prepare reader settings preview glyphs");
+      }
+    }
   }
   ignoreConfirmRelease = ignoreConfirmRelease || mappedInput.isPressed(MappedInputManager::Button::Confirm);
   ignoreBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
