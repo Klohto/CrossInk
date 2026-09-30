@@ -31,6 +31,7 @@
 #include "SettingsList.h"
 #include "activities/ActivityManager.h"
 #include "activities/home/RecentBookProgress.h"
+#include "activities/library/LibraryActivity.h"
 #include "activities/reader/BookReadingStats.h"
 #include "activities/reader/EpubReaderDrawerActivity.h"
 #include "activities/reader/ReaderFontLoading.h"
@@ -1148,6 +1149,51 @@ class SimulatorSmokeTest {
         if (library::libraryIndexNeedsRefresh()) fail("Successful Library scan stayed dirty");
         if (libraryRefreshPass == 0) {
           libraryBaselineBooks = books;
+          auto* libraryActivity = static_cast<LibraryActivity*>(activityManager.simulatorCurrentActivity());
+          const int beforeSelection = libraryActivity->simulatorSelection();
+          {
+            RenderLock busyRender;
+            mappedInputManager.simulatorClearInputFrame();
+            mappedInputManager.simulatorInjectRelease(MappedInputManager::Button::Down);
+            libraryActivity->loop();
+            mappedInputManager.simulatorClearInputFrame();
+            mappedInputManager.simulatorInjectRelease(MappedInputManager::Button::Up);
+            libraryActivity->loop();
+            if (libraryActivity->simulatorPendingInputs() != 2 ||
+                libraryActivity->simulatorSelection() != beforeSelection)
+              fail("Library did not buffer navigation while rendering");
+#if CROSSINK_APP_CAP_TOUCH
+            mappedInputManager.simulatorClearInputFrame();
+            mappedInputManager.simulatorInjectTouchDown(200, 300);
+            libraryActivity->loop();
+            mappedInputManager.simulatorClearInputFrame();
+            mappedInputManager.simulatorInjectTouchMove(200, 100);
+            libraryActivity->loop();
+            mappedInputManager.simulatorClearInputFrame();
+            mappedInputManager.simulatorInjectTouchRelease(200, 100);
+            libraryActivity->loop();
+            if (libraryActivity->simulatorPendingInputs() != 5)
+              fail("Library did not buffer touch press, cancellation and scroll");
+#endif
+          }
+          mappedInputManager.simulatorClearInputFrame();
+          while (libraryActivity->simulatorPendingInputs()) libraryActivity->loop();
+          const int selectionBeforeOverflow = libraryActivity->simulatorSelection();
+          {
+            RenderLock busyRender;
+            for (size_t i = 0; i <= LibraryInputBuffer::CAPACITY; ++i) {
+              mappedInputManager.simulatorClearInputFrame();
+              mappedInputManager.simulatorInjectRelease(MappedInputManager::Button::Down);
+              libraryActivity->loop();
+            }
+            if (libraryActivity->simulatorPendingInputs() != 1)
+              fail("Library overflow did not cancel the partial input sequence");
+          }
+          mappedInputManager.simulatorClearInputFrame();
+          libraryActivity->loop();
+          if (libraryActivity->simulatorSelection() != selectionBeforeOverflow)
+            fail("Library replayed navigation after input overflow");
+          LOG_INF("SMOKE", "Library input buffering during rendering and overflow passed");
           // Deliberately bypass invalidation to prove that a normal return visit
           // reuses the index instead of walking the card again.
           if (!Storage.writeFile(REFRESH_FIXTURE, "Library refresh smoke fixture"))
