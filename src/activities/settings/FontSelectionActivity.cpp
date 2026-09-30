@@ -338,25 +338,51 @@ void FontSelectionActivity::renderPreviewPane(int top, int height, int fontId, c
     }
   }
 
-  int y = top + metrics_.previewPadding;
-  const int textBottomLimit = top + height - labelReserved;
+  // The pane starts after the header gap; include that gap when centering
+  // between the visible header and preview-label dividers.
+  const int textAreaTop = top - metrics_.verticalSpacing;
+  const int textAreaHeight = dividerY - textAreaTop;
+  if (textAreaHeight <= 0) return;
   // English uses the regular paragraph throughout. Other languages retain
   // room for their localized glyph sample, even when only one line fits.
   const int sampleLines = *previewText ? std::min(2, maxLines - 1) : maxLines;
   const auto loremLines = renderer.wrappedText(fontId, READER_PREVIEW_PARAGRAPH, width, sampleLines);
-  for (const auto& line : loremLines) {
-    if (y + lineH > textBottomLimit) return;
-    renderer.drawText(fontId, left, y, line.c_str());
-    y += lineH + 2;
-  }
   const int remainingLines = maxLines - static_cast<int>(loremLines.size());
-  if (remainingLines <= 0 || !*previewText) return;
-  const auto localizedLines = renderer.wrappedText(fontId, previewText, width, remainingLines);
-  for (const auto& line : localizedLines) {
-    if (y + lineH > textBottomLimit) break;
+  const auto localizedLines = *previewText && remainingLines > 0
+                                  ? renderer.wrappedText(fontId, previewText, width, remainingLines)
+                                  : std::vector<std::string>{};
+  const int renderedLineCount = static_cast<int>(loremLines.size() + localizedLines.size());
+  if (renderedLineCount == 0) return;
+
+  int blockTop = 0, blockBottom = 0, lineOffset = 0;
+  bool hasInk = false;
+  const auto measureLines = [&](const std::vector<std::string>& lines) {
+    for (const auto& line : lines) {
+      const auto bounds = renderer.getTextVerticalBounds(fontId, line.c_str());
+      if (bounds.bottom > bounds.top) {
+        blockTop = hasInk ? std::min(blockTop, lineOffset + bounds.top) : lineOffset + bounds.top;
+        blockBottom = hasInk ? std::max(blockBottom, lineOffset + bounds.bottom) : lineOffset + bounds.bottom;
+        hasInk = true;
+      }
+      lineOffset += lineH + 2;
+    }
+  };
+  measureLines(loremLines);
+  measureLines(localizedLines);
+  if (!hasInk) return;
+
+  const int textBlockHeight = blockBottom - blockTop;
+  int y = textAreaTop + (textAreaHeight - textBlockHeight) / 2 - blockTop;
+  renderer.beginTextClip(0, textAreaTop, renderer.getScreenWidth(), textAreaHeight);
+  for (const auto& line : loremLines) {
     renderer.drawText(fontId, left, y, line.c_str());
     y += lineH + 2;
   }
+  for (const auto& line : localizedLines) {
+    renderer.drawText(fontId, left, y, line.c_str());
+    y += lineH + 2;
+  }
+  renderer.endTextClip();
 }
 
 void FontSelectionActivity::listScreen(UiApp::ScreenType& screen, void* user) {
