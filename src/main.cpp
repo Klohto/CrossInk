@@ -1836,13 +1836,15 @@ void loop() {
   // Add delay at the end of the loop to prevent tight spinning
   // When an activity requests skip loop delay (e.g., webserver running), use yield() for faster response
   // Otherwise, use longer delay to save power
+  const uint8_t inputPollDelayMs = activityManager.inputPollDelayMs();
   bool skipLoopDelay = false;
   {
     // Reader scheduling inspects state also owned by the render task. Never wait
     // here: the input loop must stay available while a page is being rendered.
     RenderLock lock(RenderLock::Mode::Try);
     if (!lock.ownsLock()) {
-      delay(10);
+      // Continue polling at the activity's rate while its screen is drawn.
+      delay(inputPollDelayMs);
       return;
     }
     skipLoopDelay = activityManager.skipLoopDelay();
@@ -1857,7 +1859,7 @@ void loop() {
       delay(50);
     } else {
       // Short delay to prevent tight loop while still being responsive
-      delay(10);
+      delay(inputPollDelayMs);
     }
   }
 }

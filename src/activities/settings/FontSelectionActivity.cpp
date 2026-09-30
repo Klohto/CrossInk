@@ -4,6 +4,7 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -13,6 +14,7 @@
 #include "CrossPointState.h"
 #include "MappedInputManager.h"
 #include "SdCardFontSystem.h"
+#include "activities/reader/TouchReaderPreviewModel.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "components/UIThemeTokens.h"
@@ -300,11 +302,14 @@ void FontSelectionActivity::renderPreviewPane(int top, int height, int fontId, c
   const int labelFontId = UI_10_FONT_ID;
   const int labelH = renderer.getTextHeight(labelFontId);
   const int labelGap = 4;
-  const int labelReserved = labelH + labelGap + metrics_.previewPadding;
+  const int labelReserved = labelH + 2 * labelGap + metrics_.previewPadding;
 
   char labelBuf[128];
   snprintf(labelBuf, sizeof(labelBuf), "%s \"%s\"", tr(STR_PREVIEW), fontName ? fontName : "");
-  const int labelY = top + height - metrics_.previewPadding - labelH;
+  const int dividerY = top + height - metrics_.previewPadding - labelH - labelGap;
+  const int bottomDividerY = top + height + metrics_.verticalSpacing / 2;
+  const int labelY = dividerY + (bottomDividerY - dividerY - labelH) / 2;
+  renderer.drawLine(0, dividerY, renderer.getScreenWidth() - 1, dividerY);
   renderer.drawText(labelFontId, left, labelY, labelBuf);
 
   if (fontId == 0) return;
@@ -315,18 +320,39 @@ void FontSelectionActivity::renderPreviewPane(int top, int height, int fontId, c
   const int innerHeight = height - metrics_.previewPadding - labelReserved;
   const int maxLines = std::max(1, innerHeight / (lineH + 2));
 
-  const char* previewText = I18N.get(StrId::STR_FONT_PREVIEW_TEXT);
+  const char* previewText = I18N.getLanguage() == Language::EN ? "" : tr(STR_FONT_PREVIEW_TEXT);
   if (auto* fcm = renderer.getFontCacheManager()) {
-    char prewarmBuf[256];
-    snprintf(prewarmBuf, sizeof(prewarmBuf), "%s %s", previewText, ELLIPSIS_UTF8);
-    fcm->prewarmCache(fontId, prewarmBuf, 0x01);
+    // Prepare both samples together: SD font prewarming replaces the active
+    // glyph set. This exceeds the stack budget; size the temporary heap buffer
+    // to preserve every translated UTF-8 character.
+    const size_t prewarmSize =
+        sizeof(READER_PREVIEW_PARAGRAPH) + std::strlen(previewText) + std::strlen(ELLIPSIS_UTF8) + 2;
+    auto prewarmText = makeUniqueNoThrow<char[]>(prewarmSize);
+    if (!prewarmText) {
+      LOG_ERR("FONT", "Cannot allocate font preview text (%u bytes)", static_cast<unsigned>(prewarmSize));
+    } else {
+      snprintf(prewarmText.get(), prewarmSize, "%s %s %s", READER_PREVIEW_PARAGRAPH, previewText, ELLIPSIS_UTF8);
+      if (!fcm->prewarmCache(fontId, prewarmText.get(), 0x01)) {
+        LOG_ERR("FONT", "Cannot prepare font preview glyphs");
+      }
+    }
   }
-
-  const auto lines = renderer.wrappedText(fontId, previewText, width, maxLines);
 
   int y = top + metrics_.previewPadding;
   const int textBottomLimit = top + height - labelReserved;
-  for (const auto& line : lines) {
+  // English uses the regular paragraph throughout. Other languages retain
+  // room for their localized glyph sample, even when only one line fits.
+  const int sampleLines = *previewText ? std::min(2, maxLines - 1) : maxLines;
+  const auto loremLines = renderer.wrappedText(fontId, READER_PREVIEW_PARAGRAPH, width, sampleLines);
+  for (const auto& line : loremLines) {
+    if (y + lineH > textBottomLimit) return;
+    renderer.drawText(fontId, left, y, line.c_str());
+    y += lineH + 2;
+  }
+  const int remainingLines = maxLines - static_cast<int>(loremLines.size());
+  if (remainingLines <= 0 || !*previewText) return;
+  const auto localizedLines = renderer.wrappedText(fontId, previewText, width, remainingLines);
+  for (const auto& line : localizedLines) {
     if (y + lineH > textBottomLimit) break;
     renderer.drawText(fontId, left, y, line.c_str());
     y += lineH + 2;
@@ -385,9 +411,16 @@ void FontSelectionActivity::render(RenderLock&&) {
     GUI.drawHeader(renderer, header, tr(STR_FONT_FAMILY));
   }
 
+  const int previewFontId = SETTINGS.getReaderFontId();
+  const int textHeight = previewFontId == 0 ? 0 : renderer.getTextHeight(previewFontId);
+  const int labelHeight = renderer.getTextHeight(UI_10_FONT_ID);
+  const int threeLineHeight = 3 * (textHeight + 2) + labelHeight + 8 + metrics_.previewPadding * 2;
+  const int listRowHeight = uiListRowHeight(app_.theme(), UiListRowType::SingleLine);
+  const int listReserve = 2 * listRowHeight + app_.theme().listRowGap + metrics_.verticalSpacing;
+  previewHeight = std::min(std::max(0, usableHeight - listReserve),
+                           std::max(usableHeight * metrics_.previewHeightPercent / 100, threeLineHeight));
   const int previewTop = afterHeader;
   const int listTop = previewTop + previewHeight + metrics_.verticalSpacing;
-  const int previewFontId = SETTINGS.getReaderFontId();
   const char* previewFontName = (previewFontIndex_ >= 0 && previewFontIndex_ < static_cast<int>(fonts_.size()))
                                     ? fonts_[previewFontIndex_].name.c_str()
                                     : nullptr;

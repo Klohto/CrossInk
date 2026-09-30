@@ -574,10 +574,13 @@ class ReaderPreviewModel {
 
 // Deliberately fixed Latin sample: font/layout test content, not a UI label.
 inline constexpr char READER_PREVIEW_PARAGRAPH[] =
-    "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore "
-    "magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo "
-    "consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. "
-    "Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+    "Lorem ipsum dolor sit amet, consectetur adipiscing elit. In malesuada congue tortor, vel egestas libero dignissim "
+    "mollis. "
+    "Duis ac massa id elit molestie cursus et vitae justo. Curabitur vel quam gravida, dapibus purus non, vulputate "
+    "nisi. "
+    "In sodales nisi vitae eleifend egestas. Nam pretium, ex eu iaculis porta, lorem lectus fermentum neque, id "
+    "sagittis risus enim in est. "
+    "Proin maximus fermentum ipsum nec feugiat. Cras pulvinar gravida leo fermentum rutrum.";
 using SampleReaderPreviewModel = ReaderPreviewModel<sizeof(READER_PREVIEW_PARAGRAPH), 80, 1, false>;
 static_assert(sizeof(SampleReaderPreviewModel) <= 3U * 1024U, "Sample preview exceeds its C3 budget");
 

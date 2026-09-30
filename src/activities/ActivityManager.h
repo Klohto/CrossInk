@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -190,6 +191,7 @@ class ActivityManager {
   void notifyInputLockChanged(bool locked);
   void notifyUserInput();
   bool skipLoopDelay() const;
+  uint8_t inputPollDelayMs() const;
   std::string getCurrentBookPath() const;
   ScreenshotInfo getScreenshotInfo() const;
 
