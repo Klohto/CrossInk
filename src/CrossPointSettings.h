@@ -282,6 +282,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     // Power-only choices. Keep SLEEP=1 as the existing Sleep/Wake setting.
     SLEEP_ONLY = 34,
     WAKE_ONLY = 35,
+    HOME_READER = 36,
     SHORT_PWRBTN_COUNT
   };
 
@@ -321,6 +322,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     CHORD_PREVIOUS_PAGE = 29,
     CHORD_NEARBY_POSITION_SYNC = 30,
     CHORD_LIBRARY = 31,
+    CHORD_HOME_READER = 32,
     POWER_CHORD_ACTION_COUNT
   };
 

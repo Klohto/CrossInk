@@ -2,6 +2,7 @@
 
 ### Added
 
+- Assign a physical-button-only Home/Reader shortcut that returns from nested reader menus directly to the open book, and otherwise returns Home.
 - Turn reading stats tracking on or off for the whole device or individual EPUB and XTC books, while keeping saved history and Time Left estimates.
 - Assign separate short-press and long-press actions to the Left/Up and Right/Down side buttons; existing side-button layouts migrate to matching individual actions.
 - Assign a side-button shortcut to flip the reading screen 180°, alongside clockwise and counterclockwise turns.
@@ -17,8 +18,6 @@
 - Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
 - EPUB headings and whole text blocks can use different font sizes with built-in scalable fonts and TTF fonts on ESP32-S3 devices.
 - Add a Display toggle to swap Library and File Browser on the Minimal and Dashboard home screens.
-- Choose Clock, Date, Battery, or Empty for the left, center, and right of the Display status bar; dates are also available in reader status bars and follow the selected date format.
-
 - Choose Clock, Date, Battery, or Empty for the left, center, and right of the Display status bar; dates are also available in reader status bars and follow the selected date format.
 
 ### Changed

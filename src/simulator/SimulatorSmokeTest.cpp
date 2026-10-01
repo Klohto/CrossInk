@@ -34,6 +34,7 @@
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
 #include "SettingsList.h"
+#include "activities/Activity.h"
 #include "activities/ActivityManager.h"
 #include "activities/home/HomeActivity.h"
 #include "activities/home/RecentBookProgress.h"
@@ -62,6 +63,19 @@ namespace {
 
 enum class SmokeStep : uint8_t {
   Start,
+  HomeReaderReader,
+  HomeReaderNested,
+  HomeReaderConfirmation,
+  HomeReaderTrigger,
+  HomeReaderUnwound,
+  HomeReaderReturnedHome,
+  HomeReaderNonReaderParent,
+  HomeReaderNonReaderNested,
+  HomeReaderNonReaderHome,
+  BackHomeReader,
+  BackHomeNested,
+  BackHomeReturnedReader,
+  BackHomeReturnedHome,
   Home,
   FileBrowser,
   FileBrowserSettings,
@@ -84,6 +98,20 @@ enum class SmokeStep : uint8_t {
   StatusBarEditor,
   StatusBarPicker,
   Done,
+};
+
+class HomeReaderSmokeActivity final : public Activity {
+ public:
+  HomeReaderSmokeActivity(const char* activityName, const bool reader, GfxRenderer& renderer,
+                          MappedInputManager& mappedInput, const bool bookReader = false)
+      : Activity(activityName, renderer, mappedInput), reader(reader), bookReader(bookReader) {}
+
+  bool isReaderActivity() const override { return reader; }
+  bool isBookReaderActivity() const override { return bookReader; }
+
+ private:
+  bool reader;
+  bool bookReader;
 };
 
 class SimulatorSmokeTest {
@@ -159,6 +187,12 @@ class SimulatorSmokeTest {
   uint64_t homeThemeScreenHash = 0;
   std::string homeThemeBookPath;
 
+  uint8_t homeReaderReaderKind = 0;
+  uint8_t homeReaderCancelledMask = 0;
+  Activity* homeReaderSmokeReader = nullptr;
+  bool homeReaderConfirmationAccepted = false;
+  bool backHomeChildCancelled = false;
+
   void prepareRecentLibrary() {
     SETTINGS.librarySortMethod = 4;
     SETTINGS.librarySortDescending = 1;
@@ -172,6 +206,17 @@ class SimulatorSmokeTest {
     }
     Storage.remove(library::libraryIndexPath());
     library::invalidateLibraryIndex();
+  }
+
+  static const char* homeReaderSmokeReaderName(const uint8_t kind) {
+    switch (kind) {
+      case 0:
+        return "EpubReader";
+      case 1:
+        return "TxtReader";
+      default:
+        return "XtcReader";
+    }
   }
 
   static bool enabled() { return std::getenv("CROSSINK_SIMULATOR_SMOKE_TEST") != nullptr; }
@@ -536,6 +581,60 @@ class SimulatorSmokeTest {
                   CrossPointSettings::CHORD_QUICK_ACTIONS) == chordSetting->enumRawValues.end()) {
       fail("Quick Actions is missing from the Power + Up chord setting");
     }
+    if (CrossPointSettings::HOME_READER != 36 || CrossPointSettings::SHORT_PWRBTN_COUNT != 37 ||
+        CrossPointSettings::CHORD_HOME_READER != 32 || CrossPointSettings::POWER_CHORD_ACTION_COUNT != 33) {
+      fail("Home/Reader changed persisted shortcut IDs or counts");
+    }
+    if (QuickActions::actionLabel(CrossPointSettings::HOME_READER) != StrId::STR_HOME_READER ||
+        std::string(I18N.get(StrId::STR_HOME_READER)) != "Home/Reader") {
+      fail("Home/Reader shortcut label mismatch");
+    }
+    if (QuickActions::isActionAvailable(CrossPointSettings::HOME_READER) != !gpio.hasTouch()) {
+      fail("Home/Reader capability gating does not match button-only devices");
+    }
+    const auto containsShortcut = [](const std::vector<SettingInfo>& settings, const char* key,
+                                     const ShortcutOptionCatalog catalog) {
+      const auto setting = std::find_if(settings.begin(), settings.end(),
+                                        [key](const SettingInfo& candidate) { return settingKeyIs(candidate, key); });
+      if (setting == settings.end()) return false;
+      const uint8_t raw = shortcutRawValue(catalog, CrossPointSettings::HOME_READER);
+      const auto choice = std::find(setting->enumRawValues.begin(), setting->enumRawValues.end(), raw);
+      return choice != setting->enumRawValues.end() &&
+             setting->enumValues[static_cast<size_t>(choice - setting->enumRawValues.begin())] ==
+                 StrId::STR_HOME_READER;
+    };
+    const bool shouldExposeHomeReader = !gpio.hasTouch();
+    if (containsShortcut(allSettings, "shortPwrBtn", ShortcutOptionCatalog::PowerButton) != shouldExposeHomeReader ||
+        containsShortcut(sideButtonSettings, "sideButtonUpShort", ShortcutOptionCatalog::SideButton) !=
+            shouldExposeHomeReader ||
+        containsShortcut(allSettings, "powerChordAction", ShortcutOptionCatalog::ButtonChord) !=
+            shouldExposeHomeReader) {
+      fail("Home/Reader shortcut availability or settings mapping mismatch");
+    }
+    if (shortcutRawValue(ShortcutOptionCatalog::HomeButton, CrossPointSettings::HOME_READER) !=
+            SHORTCUT_OPTION_UNAVAILABLE ||
+        shortcutRawValue(ShortcutOptionCatalog::LongPress, CrossPointSettings::HOME_READER) !=
+            SHORTCUT_OPTION_UNAVAILABLE) {
+      fail("Home/Reader was exposed on Home-key or long-press controls");
+    }
+    const uint8_t savedPowerAction = SETTINGS.shortPwrBtn;
+    const uint8_t savedChordAction = SETTINGS.powerChordAction;
+    SETTINGS.shortPwrBtn = CrossPointSettings::HOME_READER;
+    SETTINGS.powerChordAction = CrossPointSettings::CHORD_HOME_READER;
+    JsonDocument shortcutRoundTrip;
+    SETTINGS.toJson(shortcutRoundTrip);
+    SETTINGS.shortPwrBtn = CrossPointSettings::IGNORE;
+    SETTINGS.powerChordAction = CrossPointSettings::CHORD_DISABLED;
+    SETTINGS.fromJson(shortcutRoundTrip.as<JsonVariantConst>());
+    const uint8_t expectedPowerAction =
+        shouldExposeHomeReader ? CrossPointSettings::HOME_READER : CrossPointSettings::IGNORE;
+    const uint8_t expectedChordAction =
+        shouldExposeHomeReader ? CrossPointSettings::CHORD_HOME_READER : CrossPointSettings::CHORD_DISABLED;
+    if (SETTINGS.shortPwrBtn != expectedPowerAction || SETTINGS.powerChordAction != expectedChordAction) {
+      fail("Home/Reader settings round-trip did not match device availability");
+    }
+    SETTINGS.shortPwrBtn = savedPowerAction;
+    SETTINGS.powerChordAction = savedChordAction;
     if (!gpio.hasHomeKey() &&
         std::find(chordSetting->enumRawValues.begin(), chordSetting->enumRawValues.end(),
                   CrossPointSettings::CHORD_TOGGLE_HOME_BUTTON) != chordSetting->enumRawValues.end()) {
@@ -1373,7 +1472,133 @@ class SimulatorSmokeTest {
         }
 #endif
         applyRequestedTheme();
-        activityManager.goHome();
+        homeReaderReaderKind = 0;
+        homeReaderCancelledMask = 0;
+        homeReaderConfirmationAccepted = false;
+        activityManager.replaceActivity(std::make_unique<HomeReaderSmokeActivity>(
+            homeReaderSmokeReaderName(homeReaderReaderKind), true, renderer, mappedInputManager, true));
+        queueStep("Home/Reader reader owner", SmokeStep::HomeReaderReader);
+        break;
+
+      case SmokeStep::HomeReaderReader:
+        homeReaderSmokeReader = activityManager.simulatorCurrentActivity();
+        if (!homeReaderSmokeReader || !homeReaderSmokeReader->isBookReaderActivity()) {
+          fail("Home/Reader smoke reader did not become current");
+        }
+        homeReaderCancelledMask = 0;
+        homeReaderSmokeReader->startActivityForResult(
+            std::make_unique<HomeReaderSmokeActivity>("ReaderMenu", true, renderer, mappedInputManager),
+            [this](const ActivityResult& result) {
+              if (!result.isCancelled) fail("Home/Reader confirmed the first nested menu");
+              homeReaderCancelledMask |= 1;
+            });
+        queueStep("Home/Reader nested menu", SmokeStep::HomeReaderNested);
+        break;
+
+      case SmokeStep::HomeReaderNested:
+        activityManager.simulatorCurrentActivity()->startActivityForResult(
+            std::make_unique<HomeReaderSmokeActivity>("NestedSettings", false, renderer, mappedInputManager),
+            [this](const ActivityResult& result) {
+              if (!result.isCancelled) fail("Home/Reader confirmed nested settings");
+              homeReaderCancelledMask |= 2;
+            });
+        queueStep("Home/Reader destructive confirmation", SmokeStep::HomeReaderConfirmation);
+        break;
+
+      case SmokeStep::HomeReaderConfirmation:
+        activityManager.simulatorCurrentActivity()->startActivityForResult(
+            std::make_unique<HomeReaderSmokeActivity>("Confirmation", false, renderer, mappedInputManager),
+            [this](const ActivityResult& result) {
+              homeReaderConfirmationAccepted = !result.isCancelled;
+              homeReaderCancelledMask |= 4;
+            });
+        queueStep("Home/Reader trigger", SmokeStep::HomeReaderTrigger);
+        break;
+
+      case SmokeStep::HomeReaderTrigger:
+        if (!activityManager.handleShortcutAction(CrossPointSettings::HOME_READER) ||
+            !activityManager.handleShortcutAction(CrossPointSettings::HOME_READER)) {
+          fail("Repeated Home/Reader press was not consumed");
+        }
+        queueStep("Home/Reader unwound to reader", SmokeStep::HomeReaderUnwound);
+        break;
+
+      case SmokeStep::HomeReaderUnwound:
+        if (activityManager.simulatorCurrentActivity() != homeReaderSmokeReader || homeReaderCancelledMask != 7 ||
+            homeReaderConfirmationAccepted) {
+          fail("Home/Reader did not cancel every nested screen back to the existing reader");
+        }
+        if (!activityManager.handleShortcutAction(CrossPointSettings::HOME_READER)) {
+          fail("Home/Reader from the reader was not consumed");
+        }
+        queueStep("Home/Reader reader to Home", SmokeStep::HomeReaderReturnedHome);
+        break;
+
+      case SmokeStep::HomeReaderReturnedHome: {
+        if (!activityManager.isHomeActivity()) fail("Home/Reader from the reader did not return Home");
+        Activity* const homeBeforeNoOp = activityManager.simulatorCurrentActivity();
+        if (!activityManager.handleShortcutAction(CrossPointSettings::HOME_READER) ||
+            activityManager.simulatorCurrentActivity() != homeBeforeNoOp) {
+          fail("Home/Reader was not a no-op on Home");
+        }
+        if (++homeReaderReaderKind < 3) {
+          activityManager.replaceActivity(std::make_unique<HomeReaderSmokeActivity>(
+              homeReaderSmokeReaderName(homeReaderReaderKind), true, renderer, mappedInputManager, true));
+          queueStep("Home/Reader next reader type", SmokeStep::HomeReaderReader);
+        } else {
+          activityManager.simulatorCurrentActivity()->startActivityForResult(
+              std::make_unique<HomeReaderSmokeActivity>("Settings", false, renderer, mappedInputManager),
+              [](const ActivityResult&) {});
+          queueStep("Home/Reader non-reader parent", SmokeStep::HomeReaderNonReaderParent);
+        }
+        break;
+      }
+
+      case SmokeStep::HomeReaderNonReaderParent:
+        activityManager.simulatorCurrentActivity()->startActivityForResult(
+            std::make_unique<HomeReaderSmokeActivity>("Browser", false, renderer, mappedInputManager),
+            [](const ActivityResult&) {});
+        queueStep("Home/Reader non-reader nested", SmokeStep::HomeReaderNonReaderNested);
+        break;
+
+      case SmokeStep::HomeReaderNonReaderNested:
+        if (!activityManager.handleShortcutAction(CrossPointSettings::HOME_READER) ||
+            !activityManager.handleShortcutAction(CrossPointSettings::HOME_READER)) {
+          fail("Home/Reader outside a reader was not consumed");
+        }
+        queueStep("Home/Reader non-reader to Home", SmokeStep::HomeReaderNonReaderHome);
+        break;
+
+      case SmokeStep::HomeReaderNonReaderHome:
+        if (!activityManager.isHomeActivity()) fail("Home/Reader from non-reader menus did not return Home");
+        activityManager.replaceActivity(
+            std::make_unique<HomeReaderSmokeActivity>("EpubReader", true, renderer, mappedInputManager, true));
+        queueStep("Back/Home regression reader", SmokeStep::BackHomeReader);
+        break;
+
+      case SmokeStep::BackHomeReader:
+        backHomeChildCancelled = false;
+        activityManager.simulatorCurrentActivity()->startActivityForResult(
+            std::make_unique<HomeReaderSmokeActivity>("ReaderMenu", false, renderer, mappedInputManager),
+            [this](const ActivityResult& result) { backHomeChildCancelled = result.isCancelled; });
+        queueStep("Back/Home nested menu", SmokeStep::BackHomeNested);
+        break;
+
+      case SmokeStep::BackHomeNested:
+        if (!activityManager.handleHomeButtonBackOrHome()) fail("Back/Home did not handle nested reader menu");
+        queueStep("Back/Home returned one level", SmokeStep::BackHomeReturnedReader);
+        break;
+
+      case SmokeStep::BackHomeReturnedReader:
+        if (!activityManager.simulatorCurrentActivity()->isReaderActivity() || !backHomeChildCancelled) {
+          fail("Back/Home no longer pops exactly one canceled nested activity");
+        }
+        if (!activityManager.handleHomeButtonBackOrHome()) fail("Back/Home did not return from the reader");
+        queueStep("Back/Home returned Home", SmokeStep::BackHomeReturnedHome);
+        break;
+
+      case SmokeStep::BackHomeReturnedHome:
+        if (!activityManager.isHomeActivity()) fail("Back/Home from the reader did not return Home");
         queueStep("Home", SmokeStep::Home);
         break;
 
