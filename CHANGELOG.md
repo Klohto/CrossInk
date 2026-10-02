@@ -69,6 +69,7 @@
 - BMP images with extended headers now use the correct palette colors.
 - Touch gestures remain responsive while File Transfer is serving requests.
 - Closing a settings submenu restores its row and scroll position.
+- The image viewer redraws correctly after menus and the frontlight panel close.
 
 ## [v1.6.0] - 2026-09-21
 
