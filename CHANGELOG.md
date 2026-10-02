@@ -32,6 +32,8 @@
 - Menu buttons now follow the device layout: Left/Right switch tabs and Up/Down select rows in reader menus and global settings.
 - The KOReader Sync progress choice now shows remote and local progress as clear cards with large percentages, progress bars, and an "Ahead" marker on the further position.
 
+- SD-card reads keep filesystem metadata cached separately from book and font data to reduce repeated card access.
+
 ### Fixed
 
 - File Transfer choices no longer appear preselected when opened on a touch device.
@@ -67,6 +69,7 @@
 - Changing the Home theme or UI scale through the frontlight drawer no longer leaves overlapping covers or stale controls.
 - Fix filename-based KOReader sync failing at split-chapter boundaries in optimized EPUBs that already contain sync mapping data.
 - Quick Resume wakes without a full-screen clearing flash when the saved page can be restored.
+- Discard stale SD-card cache contents after a failed read to prevent incorrect reads or later writes.
 
 ## [v1.6.0] - 2026-09-21
 
