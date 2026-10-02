@@ -132,7 +132,13 @@ void OpdsBookBrowserActivity::onExit() {
 void OpdsBookBrowserActivity::activateSelected() {
   if (!entries || entryCount == 0 || selectorIndex < 0 || selectorIndex >= static_cast<int>(entryCount)) return;
   const auto& entry = entries[selectorIndex];
-  entry.type == OpdsEntryType::BOOK ? requestDownload(entry) : navigateToEntry(entry);
+  if (entry.type == OpdsEntryType::BOOK) {
+    requestDownload(entry);
+    return;
+  }
+  const bool pageLink =
+      (hasPrevPageRow && selectorIndex == 0) || (hasNextPageRow && selectorIndex == static_cast<int>(entryCount) - 1);
+  navigateToEntry(entry, pageLink);
 }
 
 void OpdsBookBrowserActivity::onRowEvent(const fui::ActionEvent& event, void* user) {
@@ -571,6 +577,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   }
 
   if (!prevUrl.empty()) {
+    hasPrevPageRow = true;
     for (size_t i = entryCount; i > 0; --i) {
       entries[i] = std::move(entries[i - 1]);
     }
@@ -579,11 +586,11 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
                            "", prevUrl, ""};
     entryCount++;
   }
-  if (!nextUrl.empty() &&
-      !appendEntry(OpdsEntry{OpdsEntryType::NAVIGATION,
-                             std::string(mappedInput.resolveLabel(mappedInput.withNextPageArrow(tr(STR_NEXT_PAGE)))),
-                             "", nextUrl, ""})) {
-    LOG_DBG("OPDS", "No room for next-page entry");
+  if (!nextUrl.empty()) {
+    hasNextPageRow = appendEntry(OpdsEntry{
+        OpdsEntryType::NAVIGATION,
+        std::string(mappedInput.resolveLabel(mappedInput.withNextPageArrow(tr(STR_NEXT_PAGE)))), "", nextUrl, ""});
+    if (!hasNextPageRow) LOG_DBG("OPDS", "No room for next-page entry");
   }
 
   selectorIndex = 0;
@@ -607,6 +614,8 @@ void OpdsBookBrowserActivity::clearEntries() {
     entries[i] = OpdsEntry{};
   }
   entryCount = 0;
+  hasPrevPageRow = false;
+  hasNextPageRow = false;
 }
 
 bool OpdsBookBrowserActivity::appendEntry(OpdsEntry&& entry) {
@@ -615,8 +624,9 @@ bool OpdsBookBrowserActivity::appendEntry(OpdsEntry&& entry) {
   return true;
 }
 
-void OpdsBookBrowserActivity::navigateToEntry(const OpdsEntry& entry) {
-  navigationHistory.push_back(currentPath);
+void OpdsBookBrowserActivity::navigateToEntry(const OpdsEntry& entry, const bool pageLink) {
+  // Pagination stays in the same catalog; Back should return to its parent.
+  if (!pageLink) navigationHistory.push_back(currentPath);
   // Resolve to a full URL so sub-sub-navigation retains parent path context
   const std::string feedUrl = UrlUtils::buildUrl(server.url, currentPath);
   currentPath = UrlUtils::buildUrl(feedUrl, entry.href);

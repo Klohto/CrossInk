@@ -46,6 +46,8 @@ class OpdsBookBrowserActivity final : public Activity {
   // 832 bytes owned by this activity; reused each render rather than allocated on the task stack.
   std::array<std::array<char, 16>, OPDS_BROWSER_ENTRY_CAPACITY> countLabels{};
   size_t entryCount = 0;
+  bool hasPrevPageRow = false;
+  bool hasNextPageRow = false;
   std::vector<std::string> navigationHistory;
   std::string currentPath;
   std::string searchTemplate;
@@ -91,7 +93,7 @@ class OpdsBookBrowserActivity final : public Activity {
   bool ensureEntryBuffer();
   void clearEntries();
   bool appendEntry(OpdsEntry&& entry);
-  void navigateToEntry(const OpdsEntry& entry);
+  void navigateToEntry(const OpdsEntry& entry, bool pageLink);
   void navigateBack();
   void requestDownload(const OpdsEntry& book);
   void downloadBook(const OpdsEntry& book, const std::string& filename);
