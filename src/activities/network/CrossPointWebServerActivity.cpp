@@ -440,24 +440,16 @@ void CrossPointWebServerActivity::loop() {
         LOG_DBG("WEBACT", "WARNING: %lu ms gap since last handleClient", timeSinceLastHandleClient);
       }
 
-      // Process HTTP requests in tight loop for maximum throughput
-      // More iterations = more data processed per main loop cycle
-      constexpr int MAX_ITERATIONS = 500;
+      // Process a batch of HTTP requests, then return to the main loop, which
+      // skips its delay while the server runs. Input is polled only there:
+      // every update() clears the previous poll's one-shot touch events
+      // (touch-down, release, completed two-finger swipes), so polling here
+      // dropped them before the ActivityManager's edge-slide and two-finger
+      // gesture handling could see them. The batch matches the old poll
+      // interval, so exit buttons stay as responsive as before.
+      constexpr int MAX_ITERATIONS = 64;
       for (int i = 0; i < MAX_ITERATIONS && webServer->isRunning(); i++) {
         webServer->handleClient();
-        // Yield and check for exit button every 64 iterations
-        if ((i & 0x3F) == 0x3F) {
-          yield();
-          // Force trigger an update of which buttons are being pressed so be have accurate state
-          // for back button checking
-          mappedInput.update();
-          // This local update can consume one-shot exit events before the
-          // ActivityManager sees them, so honor every exit route here.
-          if (exitRequested()) {
-            exitToOrigin();
-            return;
-          }
-        }
       }
       lastHandleClientTime = millis();
     }

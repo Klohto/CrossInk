@@ -67,6 +67,7 @@
 - Changing the Home theme or UI scale through the frontlight drawer no longer leaves overlapping covers or stale controls.
 - Fix filename-based KOReader sync failing at split-chapter boundaries in optimized EPUBs that already contain sync mapping data.
 - BMP images with extended headers now use the correct palette colors.
+- Touch gestures remain responsive while File Transfer is serving requests.
 
 ## [v1.6.0] - 2026-09-21
 
