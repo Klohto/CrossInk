@@ -71,6 +71,7 @@
 - Touch gestures remain responsive while File Transfer is serving requests.
 - Closing a settings submenu restores its row and scroll position.
 - The image viewer redraws correctly after menus and the frontlight panel close.
+- Settings initialization uses one shared implementation across the firmware.
 
 ## [v1.6.0] - 2026-09-21
 
