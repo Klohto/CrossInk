@@ -513,7 +513,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   // Keep the normalized server URL alive for the synchronous fetch so
   // HttpDownloader can scope Basic auth even for legacy scheme-less entries.
   const std::string authorizationOrigin = UrlUtils::ensureProtocol(server.url);
-  LOG_DBG("OPDS", "Fetching: %s", url.c_str());
+  LOG_DBG("OPDS", "Fetching: %s", UrlUtils::forLog(url).c_str());
   OpdsParser parser(entries.get(), MAX_OPDS_FEED_ENTRIES);
   {
     OpdsParserStream stream{parser};
@@ -654,7 +654,7 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
   filename += '/';
   filename += StringUtils::sanitizeFilename(buildBookFilenameBase(book, server.filenameFormat));
   filename += ".epub";
-  LOG_DBG("OPDS", "Downloading: %s -> %s", downloadUrl.c_str(), filename.c_str());
+  LOG_DBG("OPDS", "Downloading: %s -> %s", UrlUtils::forLog(downloadUrl).c_str(), filename.c_str());
 
   bool cancelRequested = false;
   auto pollCancel = [this, &cancelRequested] {

@@ -20,6 +20,7 @@
 #include "AppVersion.h"
 #include "network/HttpRedirectPolicy.h"
 #include "network/WifiPowerSaveGuard.h"
+#include "util/UrlUtils.h"
 
 namespace {
 constexpr size_t PROGRESS_UPDATE_BYTES = 64 * 1024;
@@ -149,7 +150,7 @@ HttpDownloader::DownloadError runGetWolfSsl(const std::string& url, const std::s
     // existing KOSync transport; cross-origin hops omit Basic credentials.
     http.setInsecure();
     if (!http.begin(currentUrl)) {
-      LOG_ERR("HTTP", "wolfSSL rejected URL: %s", currentUrl.c_str());
+      LOG_ERR("HTTP", "wolfSSL rejected URL: %s", UrlUtils::forLog(currentUrl).c_str());
       return HttpDownloader::HTTP_ERROR;
     }
     // Replace SecureHttpClient's built-in User-Agent so strict servers receive
@@ -167,7 +168,7 @@ HttpDownloader::DownloadError runGetWolfSsl(const std::string& url, const std::s
       http.addHeader("Authorization", std::string("Basic ") + encoded.c_str());
     }
 
-    LOG_DBG("HTTP", "wolfSSL GET: %s", currentUrl.c_str());
+    LOG_DBG("HTTP", "wolfSSL GET: %s", UrlUtils::forLog(currentUrl).c_str());
     const int status = http.GET(
         [&http, &sink, &progressNotifier](const uint8_t* data, const size_t len) {
           const int responseStatus = http.getStatus();
@@ -197,7 +198,7 @@ HttpDownloader::DownloadError runGetWolfSsl(const std::string& url, const std::s
       return HttpDownloader::HTTP_ERROR;
     }
     if (status < 0) {
-      LOG_ERR("HTTP", "wolfSSL request failed: %s", currentUrl.c_str());
+      LOG_ERR("HTTP", "wolfSSL request failed: %s", UrlUtils::forLog(currentUrl).c_str());
       logNetworkState("wolfSSL request failure");
       return HttpDownloader::HTTP_ERROR;
     }

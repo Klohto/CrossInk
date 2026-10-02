@@ -76,6 +76,9 @@
 - Reader shortcuts and the frontlight panel save the current reading position before flows that can restart the device.
 - Short upscaled images are cached after decoding instead of being repeatedly decoded on refresh.
 
+### Security
+- OPDS and download logs hide URL tokens, fragments, and embedded credentials.
+
 ## [v1.6.0] - 2026-09-21
 
 ### Added
