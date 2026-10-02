@@ -32,6 +32,11 @@
 - Menu buttons now follow the device layout: Left/Right switch tabs and Up/Down select rows in reader menus and global settings.
 - The KOReader Sync progress choice now shows remote and local progress as clear cards with large percentages, progress bars, and an "Ahead" marker on the further position.
 - Saving unchanged reading statistics avoids unnecessary SD card writes.
+- Large TLS downloads reuse the receive buffer until the connection closes, reducing repeated allocations.
+- Normal firmware builds omit wolfSSL debug tracing; explicit TLS debug builds retain it.
+- Changing the Git revision rebuilds only the firmware identity source instead of recompiling unrelated code.
+- The web portal uses less firmware space when the pinned esbuild minifier is available.
+- Built-in fonts use less firmware space while preserving their supported characters, ligatures, kerning, and rendered appearance.
 
 ### Fixed
 
