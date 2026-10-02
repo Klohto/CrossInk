@@ -52,6 +52,17 @@ std::string buildBookFilenameBase(const OpdsEntry& book, const OpdsFilenameForma
   return book.author + " - " + book.title;
 }
 
+// Mayberry prefixes folder titles with U+1F4C1 (file folder), which the UI
+// fonts lack; show "/name" instead.
+void replaceFolderEmoji(std::string& title) {
+  constexpr char FOLDER_EMOJI[] = "\xF0\x9F\x93\x81";
+  constexpr size_t FOLDER_EMOJI_LEN = sizeof(FOLDER_EMOJI) - 1;
+  if (title.compare(0, FOLDER_EMOJI_LEN, FOLDER_EMOJI) != 0) return;
+  size_t prefixLen = FOLDER_EMOJI_LEN;
+  while (prefixLen < title.size() && title[prefixLen] == ' ') ++prefixLen;
+  title.replace(0, prefixLen, "/");
+}
+
 }  // namespace
 
 OpdsBookBrowserActivity::OpdsBookBrowserActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -552,6 +563,9 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   const auto& nextUrl = parser.getNextPageUrl();
   const auto& prevUrl = parser.getPrevPageUrl();
   entryCount = parser.getEntryCount();
+  for (size_t i = 0; i < entryCount; ++i) {
+    if (entries[i].type == OpdsEntryType::NAVIGATION) replaceFolderEmoji(entries[i].title);
+  }
   if (parser.wasTruncated()) {
     LOG_DBG("OPDS", "Feed truncated to %zu entries", entryCount);
   }
