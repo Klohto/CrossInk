@@ -74,6 +74,7 @@
 - Settings initialization uses one shared implementation across the firmware.
 - Previous-page and chapter shortcuts do nothing when already at the beginning of an EPUB or XTC book.
 - Reader shortcuts and the frontlight panel save the current reading position before flows that can restart the device.
+- Short upscaled images are cached after decoding instead of being repeatedly decoded on refresh.
 
 ## [v1.6.0] - 2026-09-21
 
