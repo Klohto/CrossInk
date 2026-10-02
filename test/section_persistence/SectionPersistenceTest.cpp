@@ -20,10 +20,10 @@
 #include <GfxRenderer.h>
 
 namespace {
-constexpr uint8_t kFullVersion = 81;
-constexpr uint8_t kPartialVersion = 0xC2;
-constexpr uint8_t kPreviousFullVersion = 80;
-constexpr uint8_t kPreviousPartialVersion = 0xC1;
+constexpr uint8_t kFullVersion = 83;
+constexpr uint8_t kPartialVersion = 0xC4;
+constexpr uint8_t kPreviousFullVersion = 82;
+constexpr uint8_t kPreviousPartialVersion = 0xC3;
 constexpr uint8_t kOlderFullVersion = 79;
 constexpr uint8_t kOlderPartialVersion = 0xF4;
 constexpr uint8_t kEarlierFullVersion = 78;

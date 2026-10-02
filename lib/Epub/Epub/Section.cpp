@@ -31,11 +31,13 @@ constexpr uint32_t SECTION_CACHE_MAGIC = 0x535843FF;  // bytes: 0xFF, "CXS"
 // v79: Hangul word boundaries and line-end splits change cached page positions.
 // v80: Small EPUB images can share text lines, changing cached page positions.
 // v81: HTML and body text indents now inherit into descendant blocks.
-constexpr uint8_t SECTION_FILE_VERSION = 81;
+// v82: Scalable headings and blocks serialize point size and line height.
+// v83: Nested blocks inherit bold and italic styles, changing glyphs and wrapping.
+constexpr uint8_t SECTION_FILE_VERSION = 83;
 // Suspended incremental build: valid pages plus LUTs and a parse-watermark trailer.
 // Change this with layout or payload changes so stale partial pages cannot resume
 // under a different layout contract.
-constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xC2;
+constexpr uint8_t SECTION_FILE_PARTIAL_VERSION = 0xC4;
 constexpr uint32_t HEADER_SIZE =
     sizeof(SECTION_CACHE_MAGIC) + sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(bool) +
     sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) + sizeof(uint8_t) +

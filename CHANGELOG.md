@@ -1,9 +1,3 @@
-## [Unreleased]
-
-### Fixed
-
-- Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
-
 ## [v1.6.1] - 2026-09-30
 
 ### Added
@@ -21,6 +15,7 @@
 - View chapter pages and book progress in the X4 Pro frontlight drawer while reading.
 - Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
 - Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
+- EPUB headings and whole text blocks can use different font sizes with built-in scalable fonts and TTF fonts on ESP32-S3 devices.
 
 ### Changed
 

@@ -470,6 +470,35 @@ Binary layout:
 
 ## `section.bin`
 
+### Version 83
+
+Nested paragraphs and other blocks retain inherited CSS bold and italic styles,
+including explicit child overrides. The payload is unchanged from version 82,
+but glyph styles and wrapping can differ. Complete files use byte `83`;
+suspended partials use `0xC4`. Older full and partial caches rebuild automatically
+so previously cached regular text does not hide the corrected styling. The CSS
+rule cache format is unchanged.
+
+### Version 82
+
+Scalable-font EPUB headings and whole text blocks carry a resolved point size
+and line height. Each serialized `TextBlock` appends `u8 fontSize` (0 = reader
+font, otherwise 8-44 pt) and `u16 lineHeight` after `directionDefined` in its
+`BlockStyle` payload. The inherited Q8 font scale is layout-only and is not
+serialized. Complete section files use byte `82`; suspended partials use `0xC3`.
+Older full and partial caches rebuild automatically.
+
+CSS cache revision `20` adds a five-byte font-size length (float value plus unit)
+after `imageWidth` and uses defined-property bit 23. The fixed style payload is
+76 bytes. Older CSS caches rebuild automatically.
+
+On scalable fonts, headings default to 2, 1.5, 1.17, 1, 0.83, and 0.67 times the
+inherited size, rounded to whole points and bounded to 8-44 pt. Enabled book
+styles can override block sizes using em, rem, %, px, pt, and size keywords.
+CSS 16px/12pt maps to the user's selected body size; em/% use the parent and
+rem uses the HTML root. Inline span size changes and table-cell sizing remain
+uniform in this phase. Light mode and bitmap fonts retain their existing sizes.
+
 ### Version 81
 
 Version 81 carries `text-indent` from the HTML and body root styles into
@@ -687,6 +716,8 @@ struct BlockStyle {
     bool textIndentDefined;
     bool isRtl;
     bool directionDefined;
+    u8 fontSize;
+    u16 lineHeight;
 };
 
 struct TextBlock {
