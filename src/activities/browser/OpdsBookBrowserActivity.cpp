@@ -12,6 +12,7 @@
 #include <WiFi.h>
 #include <ZipFile.h>
 
+#include <cstdio>
 #include <utility>
 
 #include "CrossPointSettings.h"
@@ -37,7 +38,6 @@
 namespace fui = freeink::ui;
 
 namespace {
-constexpr size_t OPDS_BROWSER_ENTRY_CAPACITY = MAX_OPDS_FEED_ENTRIES + 2;
 constexpr size_t OPDS_DOWNLOAD_BUFFER_SIZE = 2048;
 constexpr fui::ActionId ACTION_ROW = 1;
 constexpr fui::ActionId ACTION_SEARCH = 2;
@@ -355,7 +355,13 @@ void OpdsBookBrowserActivity::buildBrowsingScreen(UiApp::ScreenType& screen) {
     fui::ListItem item;
     item.label = entry.title.c_str();
     if (entry.type == OpdsEntryType::BOOK && !entry.author.empty()) item.subtitle = entry.author.c_str();
-    if (entry.type == OpdsEntryType::NAVIGATION) item.value = ">";
+    if (entry.type == OpdsEntryType::NAVIGATION) {
+      item.value = ">";
+      if (entry.count >= 0) {
+        snprintf(countLabels[i].data(), countLabels[i].size(), "(%ld) >", static_cast<long>(entry.count));
+        item.value = countLabels[i].data();
+      }
+    }
     item.actionValue = static_cast<int16_t>(items.size());
     items.push_back(item);
   }

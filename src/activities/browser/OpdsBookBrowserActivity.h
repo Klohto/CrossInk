@@ -1,8 +1,10 @@
 #pragma once
+
 #include <FreeInkApp.h>
 #include <FreeInkUIGfxRenderer.h>
 #include <OpdsParser.h>
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <string>
@@ -40,6 +42,9 @@ class OpdsBookBrowserActivity final : public Activity {
   BrowserState state = BrowserState::LOADING;
   ScreenTransitionRefresh screenTransitionRefresh;
   std::unique_ptr<OpdsEntry[]> entries;
+  static constexpr size_t OPDS_BROWSER_ENTRY_CAPACITY = MAX_OPDS_FEED_ENTRIES + 2;
+  // 832 bytes owned by this activity; reused each render rather than allocated on the task stack.
+  std::array<std::array<char, 16>, OPDS_BROWSER_ENTRY_CAPACITY> countLabels{};
   size_t entryCount = 0;
   std::vector<std::string> navigationHistory;
   std::string currentPath;
