@@ -70,6 +70,7 @@
 - Fix filename-based KOReader sync failing at split-chapter boundaries in optimized EPUBs that already contain sync mapping data.
 - Quick Resume wakes without a full-screen clearing flash when the saved page can be restored.
 - Discard stale SD-card cache contents after a failed read to prevent incorrect reads or later writes.
+- Back and Home can cancel an active HTTP book or font upload and remove its incomplete file.
 
 ## [v1.6.0] - 2026-09-21
 
