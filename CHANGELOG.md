@@ -68,6 +68,7 @@
 - Fix filename-based KOReader sync failing at split-chapter boundaries in optimized EPUBs that already contain sync mapping data.
 - BMP images with extended headers now use the correct palette colors.
 - Touch gestures remain responsive while File Transfer is serving requests.
+- Closing a settings submenu restores its row and scroll position.
 
 ## [v1.6.0] - 2026-09-21
 
