@@ -1388,7 +1388,7 @@ void setup() {
             (BoardConfig::isX4Pro() || CROSSINK_APP_DEVICE_X4CLASSIC) ? "DOWN" : "UP");
   }
 
-  LOG_DBG("MAIN", "Starting CrossInk version " CROSSINK_VERSION);
+  LOG_DBG("MAIN", "Starting CrossInk version %s", AppVersion::version());
   logMemoryStats("Boot");
 
   // Resolve the single boot-presentation decision. Skipping the splash also
