@@ -27,3 +27,8 @@ add_executable(pixel_cache_test PixelCacheTest.cpp)
 target_include_directories(pixel_cache_test PRIVATE stubs ${REPO_ROOT}/lib/Epub/Epub/converters)
 target_link_libraries(pixel_cache_test PRIVATE gtest_main crosspoint_test_common)
 gtest_discover_tests(pixel_cache_test)
+
+add_executable(download_file_swap_test DownloadFileSwapTest.cpp)
+target_include_directories(download_file_swap_test PRIVATE stubs ${REPO_ROOT}/src/network)
+target_link_libraries(download_file_swap_test PRIVATE gtest_main crosspoint_test_common)
+gtest_discover_tests(download_file_swap_test)

@@ -75,6 +75,7 @@
 - Previous-page and chapter shortcuts do nothing when already at the beginning of an EPUB or XTC book.
 - Reader shortcuts and the frontlight panel save the current reading position before flows that can restart the device.
 - Short upscaled images are cached after decoding instead of being repeatedly decoded on refresh.
+- OPDS asks before replacing books, validates completed downloads, checks available space, and preserves the old book if a transfer or replacement fails.
 
 ### Security
 - OPDS and download logs hide URL tokens, fragments, and embedded credentials.

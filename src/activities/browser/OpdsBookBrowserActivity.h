@@ -88,7 +88,8 @@ class OpdsBookBrowserActivity final : public Activity {
   bool appendEntry(OpdsEntry&& entry);
   void navigateToEntry(const OpdsEntry& entry);
   void navigateBack();
-  void downloadBook(const OpdsEntry& book);
+  void requestDownload(const OpdsEntry& book);
+  void downloadBook(const OpdsEntry& book, const std::string& filename);
   void launchSearch();
   void performSearch(const std::string& query);
   bool preventAutoSleep() override;
