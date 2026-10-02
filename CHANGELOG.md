@@ -72,7 +72,7 @@
 - In-book setting choices now open with the current value highlighted and visible, including fonts and font sizes.
 - Changing the Home theme or UI scale through the frontlight drawer no longer leaves overlapping covers or stale controls.
 - Fix filename-based KOReader sync failing at split-chapter boundaries in optimized EPUBs that already contain sync mapping data.
-- BMP images with extended headers now use the correct palette colors.
+- BMP images with extended headers now use the correct palette colors, and incomplete palettes are rejected.
 - Touch gestures remain responsive while File Transfer is serving requests.
 - Closing a settings submenu restores its row and scroll position.
 - The image viewer redraws correctly after menus and the frontlight panel close.
