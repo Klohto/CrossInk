@@ -66,6 +66,7 @@
 - In-book setting choices now open with the current value highlighted and visible, including fonts and font sizes.
 - Changing the Home theme or UI scale through the frontlight drawer no longer leaves overlapping covers or stale controls.
 - Fix filename-based KOReader sync failing at split-chapter boundaries in optimized EPUBs that already contain sync mapping data.
+- Quick Resume wakes without a full-screen clearing flash when the saved page can be restored.
 
 ## [v1.6.0] - 2026-09-21
 
