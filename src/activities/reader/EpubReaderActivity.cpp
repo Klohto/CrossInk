@@ -3202,6 +3202,7 @@ void EpubReaderActivity::loop() {
         case CrossPointSettings::SIDE_NEXT_CHAPTER: {
           const bool next = side.action == CrossPointSettings::SIDE_NEXT_CHAPTER;
           clearPendingManualPageTurns();
+          if (!next && isAtBookStart()) break;
           if (!next && section && section->currentPage > 0) {
             section->currentPage = 0;
           } else {
@@ -3280,6 +3281,18 @@ void EpubReaderActivity::loop() {
       frontButtonLongPressHandled = true;
       if (SETTINGS.longPressButtonBehavior == CrossPointSettings::CHAPTER_SKIP) {
         clearPendingManualPageTurns();
+        if (!nextLongPressed && currentSpineIndex <= 0) {
+          bool changed = false;
+          {
+            RenderLock lock(*this);
+            if (section && section->currentPage > 0) {
+              section->currentPage = 0;
+              changed = true;
+            }
+          }
+          if (changed) requestUpdate();
+          return;
+        }
         if (currentSpineIndex > 0 && currentSpineIndex >= epub->getSpineItemsCount()) {
           if (nextLongPressed) {
             onGoHome();
@@ -3396,6 +3409,7 @@ void EpubReaderActivity::loop() {
 
   if (skipChapter) {
     clearPendingManualPageTurns();
+    if (!nextTriggered && isAtBookStart()) return;
     if (!nextTriggered && section && section->currentPage > 0) {
       section->currentPage = 0;
       requestUpdate();
@@ -5884,7 +5898,12 @@ void EpubReaderActivity::cancelSilentNextChapterPrefetchForForwardTurn() {
   LOG_DBG("ERS", "Forward page turn requested while silent next-chapter indexing is busy; cancelling prefetch");
 }
 
+bool EpubReaderActivity::isAtBookStart() const {
+  return !activeFootnotePreview && section && currentSpineIndex == 0 && section->currentPage == 0;
+}
+
 void EpubReaderActivity::pageTurn(bool isForwardTurn, const char* source) {
+  if (!isForwardTurn && isAtBookStart()) return;
   pageLoadRetryCount = 0;
   if (activeFootnotePreview) {
     if (isForwardTurn) {
