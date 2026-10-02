@@ -73,6 +73,7 @@
 - The image viewer redraws correctly after menus and the frontlight panel close.
 - Settings initialization uses one shared implementation across the firmware.
 - Previous-page and chapter shortcuts do nothing when already at the beginning of an EPUB or XTC book.
+- Reader shortcuts and the frontlight panel save the current reading position before flows that can restart the device.
 
 ## [v1.6.0] - 2026-09-21
 
