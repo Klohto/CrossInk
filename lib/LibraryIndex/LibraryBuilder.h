@@ -65,7 +65,11 @@ struct BuildStats {
   uint16_t metadataCached = 0;  // EPUB metadata restored from library.meta instead of parsed
   bool indexReplaced = false;
   bool ranksDegraded = false;
+  // Duplicate detection was incomplete: either its key buffer could not be
+  // allocated (dedupAllocFailed, worth retrying) or one folder chain holds more
+  // books than the tracker remembers (same result on every scan).
   bool dedupDegraded = false;
+  bool dedupAllocFailed = false;
   bool arrivalDegraded = false;
 };
 
@@ -112,7 +116,9 @@ bool buildLibraryIndex(const char* rootPath, BuildStats& stats, bool readMetadat
 
 // Starts dirty on cold boots to reconcile external card edits. File-changing
 // activities must invalidate before returning to Library. A successful scan
-// clears only changes known when it started; failures remain retryable.
+// clears only changes known when it started; failures and allocation-starved
+// builds remain retryable. Results a rescan would repeat, such as skipped
+// unreadable files or a capped duplicate tracker, do not re-dirty the index.
 void invalidateLibraryIndex();
 bool libraryIndexNeedsRefresh();
 // Boot-only: called after validating a clean scan retained across deep sleep.

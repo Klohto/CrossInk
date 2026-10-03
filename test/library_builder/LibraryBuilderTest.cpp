@@ -978,7 +978,18 @@ TEST_F(LibraryBuilderTest, DuplicateDetectionRemainsBoundedAndFindsTrackedKeysAf
   EXPECT_EQ(stats.books, LIBRARY_MAX_DEDUP_KEYS + 1);
   EXPECT_EQ(stats.duplicatesDropped, 1);
   EXPECT_TRUE(stats.dedupDegraded);
+  EXPECT_FALSE(stats.dedupAllocFailed);
+  // The cap is a property of the card's layout; rescanning would hit it again.
+  EXPECT_FALSE(libraryIndexNeedsRefresh());
   EXPECT_LT(fake::delays, 2000u);
+}
+
+TEST_F(LibraryBuilderTest, UnreadableBooksDoNotKeepTheIndexDirty) {
+  fake::add("/empty.epub", "");
+  ASSERT_TRUE(buildLibraryIndex("/", stats, false));
+  EXPECT_EQ(stats.unreadableSkipped, 1);
+  EXPECT_EQ(stats.books, 2);
+  EXPECT_FALSE(libraryIndexNeedsRefresh());
 }
 
 TEST_F(LibraryBuilderTest, ReadWriteCloseAndAllocationFailuresRetainPreviousIndex) {

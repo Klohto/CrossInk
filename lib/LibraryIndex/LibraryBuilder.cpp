@@ -1766,6 +1766,7 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   stats.duplicatesDropped = st.duplicatesDropped;
   stats.unreadableSkipped = st.unreadableSkipped;
   stats.dedupDegraded = st.dedupDegraded;
+  stats.dedupAllocFailed = !dedupKeys;
   stats.unchanged = st.reused;
   stats.enriched = st.enriched;
 
@@ -1852,8 +1853,10 @@ bool buildLibraryIndex(const char* rootPath, BuildStats& stats, const bool readM
   if (!ok && stats.failure == BuildFailure::None)
     stats.failure = buildControl.cancelled ? BuildFailure::Cancelled : BuildFailure::Error;
   buildControl = BuildControl{};
-  if (!ok || stats.unreadableSkipped || stats.ranksDegraded || stats.dedupDegraded || stats.arrivalDegraded)
-    invalidateLibraryIndex();
+  // Retry only what another scan could change. Unreadable files and a capped
+  // duplicate tracker come from the card's contents, so re-dirtying for them
+  // would rescan on every Library visit until the files themselves change.
+  if (!ok || stats.ranksDegraded || stats.dedupAllocFailed || stats.arrivalDegraded) invalidateLibraryIndex();
   return ok;
 }
 
