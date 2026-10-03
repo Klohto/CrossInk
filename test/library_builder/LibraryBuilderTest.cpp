@@ -13,6 +13,7 @@
 #include "LibraryIndexFile.h"
 #include "LibraryMetadataCache.h"
 #include "LibraryText.h"
+#include "Memory.h"
 
 using namespace library;
 
@@ -100,6 +101,8 @@ class LibraryBuilderTest : public ::testing::Test {
 
   void SetUp() override {
     fake::reset();
+    fake::psram = false;
+    fake::psramAllocations = 0;
     invalidateLibraryIndex();
     bookMetadata.clear();
     cachedBookMetadata.clear();
@@ -1005,8 +1008,9 @@ TEST_F(LibraryBuilderTest, TruncatedPersistedPathHashAbortsAndRetainsTheLiveInde
   EXPECT_FALSE(Storage.exists("/.crosspoint/library.stage.f"));
 }
 
-TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtFormatCeilingKeepAllOrders) {
-  for (const unsigned count : {513u, static_cast<unsigned>(CLIX_MAX_RECORDS)}) {
+TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtBookLimitKeepAllOrders) {
+  ASSERT_EQ(libraryBookLimit(), 4096);
+  for (const unsigned count : {513u, static_cast<unsigned>(libraryBookLimit())}) {
     fake::reset();
     bookMetadata.clear();
     std::vector<unsigned> authorOrder(count);
@@ -1022,12 +1026,12 @@ TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtFormatCeilingKeepAllOrders) 
     ASSERT_EQ(stats.books, count);
     EXPECT_FALSE(stats.ranksDegraded);
 
-    if (count == CLIX_MAX_RECORDS) {
+    if (count == libraryBookLimit()) {
       fake::parses = 0;
       fake::resetIoCounters();
       ASSERT_TRUE(buildLibraryIndex("/", stats, true));
       EXPECT_EQ(fake::parses, 0u);
-      EXPECT_EQ(stats.metadataReused, CLIX_MAX_RECORDS);
+      EXPECT_EQ(stats.metadataReused, libraryBookLimit());
       // The fixed-size per-directory duplicate tracker is deliberately bounded
       // below the maximum library size, so this index remains degraded. It must
       // rebuild rather than silently preserve an old degraded header.
@@ -1053,10 +1057,10 @@ TEST_F(LibraryBuilderTest, LibrariesPastOldGateAndAtFormatCeilingKeepAllOrders) 
   }
 }
 
-TEST_F(LibraryBuilderTest, BookPastFormatCeilingKeepsPreviousIndex) {
+TEST_F(LibraryBuilderTest, BookPastLimitKeepsPreviousIndex) {
   initial();
   const auto previous = fake::files[INDEX]->bytes;
-  for (unsigned i = 0; i < CLIX_MAX_RECORDS - 1; i++) {
+  for (unsigned i = 0; i < libraryBookLimit() - 1u; i++) {
     fake::add("/book" + numbered("", i) + ".epub");
   }
 
@@ -1305,4 +1309,33 @@ TEST_F(LibraryBuilderTest, FailedExtractionIsNotCached) {
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::parses, 1u);
   EXPECT_EQ(stats.metadataCached, 1);
+}
+
+TEST_F(LibraryBuilderTest, PsramDevicesIndexPastTheInternalRamLimit) {
+  fake::reset();
+  constexpr unsigned count = 4100;
+  for (unsigned i = 0; i < count; i++) fake::add("/book" + numbered("", count - 1 - i) + ".txt");
+
+  EXPECT_FALSE(buildLibraryIndex("/", stats, false));
+  EXPECT_EQ(stats.failure, BuildFailure::TooManyBooks);
+
+  fake::psram = true;
+  EXPECT_EQ(libraryBookLimit(), CLIX_MAX_RECORDS);
+  ASSERT_TRUE(buildLibraryIndex("/", stats, false));
+  EXPECT_EQ(stats.books, count);
+  EXPECT_FALSE(stats.ranksDegraded);
+  EXPECT_GT(fake::psramAllocations, 0u);
+
+  LibraryIndexFile index;
+  ASSERT_TRUE(index.open(INDEX));
+  ASSERT_EQ(index.bookCount(), count);
+  for (const uint16_t row : {0u, 1u, 2048u, 4095u, 4099u}) {
+    EXPECT_EQ(pathAt(index, SortOrder::TitleAsc, row), "/book" + numbered("", row) + ".txt") << row;
+  }
+
+  // A device without PSRAM still reads the larger index another device built.
+  fake::psram = false;
+  index.close();
+  ASSERT_TRUE(index.open(INDEX));
+  EXPECT_EQ(index.bookCount(), count);
 }

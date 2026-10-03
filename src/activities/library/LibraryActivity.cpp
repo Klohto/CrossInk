@@ -434,7 +434,7 @@ void LibraryActivity::applyFilter() {
   std::string combined;
   std::string folded;
   // Blob fields are byte-length-prefixed. Reserve once for the entire scan,
-  // avoiding concat/fold allocations for each of up to 4,096 books.
+  // avoiding concat/fold allocations for every book in the index.
   title.reserve(UINT8_MAX);
   author.reserve(UINT8_MAX);
   name.reserve(UINT8_MAX);

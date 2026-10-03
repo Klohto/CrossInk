@@ -92,6 +92,11 @@ struct BuildCallbacks {
 inline constexpr uint32_t LIBRARY_CANCEL_POLL_MS = 50;
 inline constexpr uint32_t LIBRARY_PROGRESS_INTERVAL_MS = 3000;
 
+// Books one build can index on this device. Devices without PSRAM hold every
+// per-book sort array in internal RAM, which bounds them well below the format
+// ceiling; PSRAM devices reach CLIX_MAX_RECORDS.
+uint16_t libraryBookLimit();
+
 // Walk `rootPath`, write `/.crosspoint/library.idx`, and report what happened.
 // The previous index, including its monotonic "recently added" counter, is read
 // internally so callers cannot accidentally split one rebuild state across two

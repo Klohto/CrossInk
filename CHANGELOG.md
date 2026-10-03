@@ -99,6 +99,7 @@
 - Holding Power to wake from sleep no longer also opens Quick Actions or runs a reader shortcut.
 - Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
 - Reopen EPUBs on the last page read after following in-book links, and retain the three most recent Back destinations across closing, sleep, and KOReader sync. Transient footnote previews still return to their immediate reading page.
+- On X4 Pro and Sticky, Library indexes up to 32,767 books instead of failing on cards with more than 4,096.
 
 ### Security
 

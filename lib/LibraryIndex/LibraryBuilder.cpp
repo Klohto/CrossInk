@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 
 #include "../../src/util/BookCacheUtils.h"
 #include "LibraryFileTypes.h"
@@ -33,6 +34,9 @@ constexpr char BACKUP_PATH[] = "/.crosspoint/library.bak";
 constexpr char STAGE_PATH[] = "/.crosspoint/library.stage";
 constexpr char CACHE_DIR[] = "/.crosspoint";
 constexpr size_t LIBRARY_IO_BUFFER_SIZE = 4096;
+// The largest library whose per-book arrays fit the C3's internal heap. The
+// emit phase holds a 14-byte sort key plus four u16 arrays per book at once.
+constexpr uint16_t INTERNAL_RAM_BOOK_LIMIT = 4096;
 
 // Matches lib/FileIndex's buffer so a name this walk accepts is one the file
 // browser could also show.
@@ -87,6 +91,35 @@ uint32_t parseSeriesPosition(const std::string& text) {
 // Sort array element. Holding a 12-byte key segment rather than the whole fold
 // keeps this at 14 bytes per book. Equal-prefix runs are refined from the
 // staged source in later passes without growing the resident array.
+// Per-book working arrays (sort keys, permutations, reconciliation entries).
+// On PSRAM devices they are placed in PSRAM so a large library neither
+// fragments nor competes for the internal heap the reader needs; elsewhere,
+// or if PSRAM is exhausted, they come from the default heap. Zero-filled, like
+// the value-initialised arrays they replace. Only trivially copyable element
+// types are stored, so raw byte storage needs no construction.
+template <typename T>
+class BookArray {
+  static_assert(std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>,
+                "BookArray holds plain records only");
+
+ public:
+  bool allocate(const size_t count) {
+    const size_t bytes = (count == 0 ? 1 : count) * sizeof(T);
+    storage.reset();
+    if (psramHeapAvailable()) storage = makeAlignedByteBufferNoThrow(bytes, MemoryPool::Psram);
+    if (!storage) storage = makeAlignedByteBufferNoThrow(bytes);
+    if (storage) memset(storage.get(), 0, bytes);
+    return static_cast<bool>(storage);
+  }
+  void reset() { storage.reset(); }
+  T* get() const { return reinterpret_cast<T*>(storage.get()); }
+  T& operator[](const size_t index) const { return get()[index]; }
+  explicit operator bool() const { return static_cast<bool>(storage); }
+
+ private:
+  HeapByteBuffer storage;
+};
+
 struct SortKey {
   char key[12];
   uint16_t ordinal;
@@ -714,9 +747,9 @@ void walk(WalkState& st, const std::string& path, const int depth) {
         st.dedupDegraded = true;
       }
     }
-    if (st.books >= CLIX_MAX_RECORDS) {
+    if (st.books >= libraryBookLimit()) {
       LOG_ERR("LIBIDX", "library exceeds the %u-book index limit; keeping the previous index",
-              static_cast<unsigned>(CLIX_MAX_RECORDS));
+              static_cast<unsigned>(libraryBookLimit()));
       st.stats->failure = BuildFailure::TooManyBooks;
       st.failed = true;
       break;
@@ -764,8 +797,8 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
   const uint16_t n = st.books;
   uint32_t serviceUnits = 0;
 
-  auto arrivalOrder = makeUniqueNoThrow<uint16_t[]>(n == 0 ? 1 : n);
-  if (!arrivalOrder) {
+  BookArray<uint16_t> arrivalOrder;
+  if (!arrivalOrder.allocate(n)) {
     LOG_ERR("LIBIDX", "arrival order array alloc failed");
     return false;
   }
@@ -873,14 +906,15 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
 
   // Author order has to be known BEFORE the records are written because its
   // permutation section is emitted first.
-  // The title key array is already gone before this phase. At the 4096-record
-  // ceiling this checked, phase-local allocation is 57,344 bytes.
+  // The title key array is already gone before this phase. At the 4,096-book
+  // internal-RAM limit this checked, phase-local allocation is 57,344 bytes.
   const bool rankable = coreSortsAvailable;
   if (rankable && n > 1) {
     LOG_DBG("LIBIDX", "author sort alloc: %u bytes, heap %u, max block %u", static_cast<unsigned>(n * sizeof(SortKey)),
             static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
   }
-  auto authorSort = rankable && n > 1 ? makeUniqueNoThrow<SortKey[]>(n) : nullptr;
+  BookArray<SortKey> authorSort;
+  if (rankable && n > 1) authorSort.allocate(n);
   if (authorSort) {
     for (uint16_t i = 0; i < n; i++) {
       serviceBuilder(serviceUnits);
@@ -921,10 +955,10 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
   //
   // authorSort is already grouped: books by one person are contiguous in it. So
   // this is one walk over the runs, holding only the current run's spellings.
-  std::unique_ptr<uint16_t[]> canonicalFrom;
+  BookArray<uint16_t> canonicalFrom;
   std::unique_ptr<SpellingSlot[]> spellingScratch;
   if (authorSort && n > 1) {
-    canonicalFrom = makeUniqueNoThrow<uint16_t[]>(n);
+    canonicalFrom.allocate(n);
   }
   if (canonicalFrom) {
     for (uint16_t i = 0; i < n; i++) {
@@ -1107,8 +1141,8 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
     if (n > 1) {
       // Fallible and non-fatal: without the array the sort still runs on
       // firstSeen alone, which is the pre-timestamp behaviour.
-      auto creationTimes = makeUniqueNoThrow<uint32_t[]>(n);
-      if (creationTimes) {
+      BookArray<uint32_t> creationTimes;
+      if (creationTimes.allocate(n)) {
         for (uint16_t i = 0; i < n; i++) {
           serviceBuilder(serviceUnits);
           if (!readStageAt(static_cast<uint64_t>(order[i]) * STAGE_STRIDE + offsetof(StagedEntry, creationTime),
@@ -1413,7 +1447,7 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   // Load what the previous index knew, so the walk can recognise the same books.
   // An obsolete format starts fresh; I/O, record, and allocation failures stop
   // the rebuild so the previous index remains untouched.
-  std::unique_ptr<PriorEntry[]> priorList;
+  BookArray<PriorEntry> priorList;
   uint16_t priorCount = 0;
   uint16_t nextFirstSeen = 0;
   LibraryIndexFile previous;
@@ -1421,8 +1455,7 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
     if (previous.openForReconciliation(INDEX_PATH)) {
       nextFirstSeen = previous.header().nextFirstSeen;
       priorCount = previous.bookCount();
-      priorList = makeUniqueNoThrow<PriorEntry[]>(priorCount == 0 ? 1 : priorCount);
-      if (!priorList) {
+      if (!priorList.allocate(priorCount)) {
         LOG_ERR("LIBIDX", "prior index array alloc failed");
         return false;
       }
@@ -1543,8 +1576,8 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   // book on every single verification, to decide a case that arises when someone
   // renames a file.
   [[maybe_unused]] const uint32_t reconcileStartMs = millis();
-  auto resolvedFirstSeen = makeUniqueNoThrow<uint16_t[]>(st.books == 0 ? 1 : st.books);
-  if (!resolvedFirstSeen) {
+  BookArray<uint16_t> resolvedFirstSeen;
+  if (!resolvedFirstSeen.allocate(st.books)) {
     LOG_ERR("LIBIDX", "firstSeen array alloc failed");
     Storage.remove(STAGE_PATH);
     Storage.remove(folderStagePath.c_str());
@@ -1628,9 +1661,9 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   dedupKeys.reset();
 
   // Read the staged fold prefixes back and sort ordinals. The checked 14-byte
-  // key allocation reaches 57,344 bytes at the 4,096-record format ceiling.
-  auto order = makeUniqueNoThrow<uint16_t[]>(st.books == 0 ? 1 : st.books);
-  if (!order) {
+  // key allocation reaches 57,344 bytes at the 4,096-book internal-RAM limit.
+  BookArray<uint16_t> order;
+  if (!order.allocate(st.books)) {
     LOG_ERR("LIBIDX", "order array alloc failed (%u books)", static_cast<unsigned>(st.books));
     Storage.remove(STAGE_PATH);
     Storage.remove(folderStagePath.c_str());
@@ -1646,8 +1679,8 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
     LOG_DBG("LIBIDX", "title sort alloc: %u bytes, heap %u, max block %u",
             static_cast<unsigned>(st.books * sizeof(SortKey)), static_cast<unsigned>(ESP.getFreeHeap()),
             static_cast<unsigned>(ESP.getMaxAllocHeap()));
-    auto keys = makeUniqueNoThrow<SortKey[]>(st.books);
-    if (keys) {
+    BookArray<SortKey> keys;
+    if (keys.allocate(st.books)) {
       HalFile stage;
       if (!Storage.openFileForRead("LIBIDX", STAGE_PATH, stage)) {
         LOG_ERR("LIBIDX", "title sort: cannot reopen the record stage");
@@ -1732,6 +1765,8 @@ void invalidateLibraryIndex() { indexDirty.store(true, std::memory_order_relaxed
 bool libraryIndexNeedsRefresh() { return indexDirty.load(std::memory_order_relaxed); }
 
 void restoreLibraryIndexAfterSleep() { indexDirty.store(false, std::memory_order_relaxed); }
+
+uint16_t libraryBookLimit() { return psramHeapAvailable() ? CLIX_MAX_RECORDS : INTERNAL_RAM_BOOK_LIMIT; }
 
 bool buildLibraryIndex(const char* rootPath, BuildStats& stats, const bool readMetadata,
                        const BuildCallbacks* callbacks) {

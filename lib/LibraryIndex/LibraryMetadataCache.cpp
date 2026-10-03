@@ -211,8 +211,7 @@ void LibraryMetadataCache::close() {
   unsyncedStores = 0;
 }
 
-bool LibraryMetadataCache::readSlot(const uint32_t index, uint64_t& pathHash, uint32_t& payloadOffset,
-                                    bool& empty) {
+bool LibraryMetadataCache::readSlot(const uint32_t index, uint64_t& pathHash, uint32_t& payloadOffset, bool& empty) {
   CacheSlot slot{};
   if (!slots.seekSet(SLOT_START + index * sizeof(CacheSlot)) ||
       slots.read(&slot, sizeof(slot)) != static_cast<int>(sizeof(slot))) {
@@ -320,9 +319,7 @@ void LibraryMetadataCache::store(const uint64_t pathHash, const uint32_t fileSiz
   // written first, and the checksum covers a write the card reordered.
   const uint32_t offset = payloadEnd;
   const size_t bytes = sizeof(header) + header.titleLen + header.authorLen + header.seriesLen + header.genreLen;
-  const auto put = [this](const void* data, const size_t len) {
-    return len == 0 || payload.write(data, len) == len;
-  };
+  const auto put = [this](const void* data, const size_t len) { return len == 0 || payload.write(data, len) == len; };
   if (!payload.seekSet(offset) || !put(&header, sizeof(header)) || !put(metadata.title.data(), header.titleLen) ||
       !put(metadata.author.data(), header.authorLen) || !put(metadata.series.data(), header.seriesLen) ||
       !put(metadata.genre.data(), header.genreLen)) {
