@@ -96,6 +96,7 @@
 - OPDS asks before replacing books, validates completed downloads, checks available space, and preserves the old book if a transfer or replacement fails.
 - Holding Power to wake from sleep no longer also opens Quick Actions or runs a reader shortcut.
 - Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
+- Reopen EPUBs on the last page read after following in-book links, and retain the three most recent Back destinations across closing, sleep, and KOReader sync. Transient footnote previews still return to their immediate reading page.
 
 ### Security
 

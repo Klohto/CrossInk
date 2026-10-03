@@ -5,6 +5,22 @@ All POD fields are written in the ESP32 little-endian representation used by
 `Serialization.h`; strings are length-prefixed UTF-8 unless a format notes a
 fixed-size char buffer.
 
+## `epub_<hash>/links.bin`
+
+The EPUB reader writes followed-link Back history on clean exit (Home, sleep,
+or reader replacement for sync). The record has a one-byte depth (1–3), followed
+by that many pairs of little-endian `u16` spine index and `u16` page number,
+oldest first: 5, 9, or 13 bytes. Empty history removes the file. A transient
+footnote preview resumes at its immediate origin and omits that final entry;
+earlier full-section links remain in the record.
+
+On open, the reader checks the exact length and each spine index, closes the
+file, and deletes it before adopting the history. Malformed records are also
+consumed. A later clean exit rewrites the current stack; an unclean shutdown
+cannot revive history from a previous session. This new sidecar does not change
+EPUB layout cache formats. As with in-memory Back history, changing font or
+layout may shift the destination page.
+
 ## `/.crosspoint/home_carousel_cache_<index>.bin`
 
 ### Version 6
