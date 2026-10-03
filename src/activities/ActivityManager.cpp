@@ -112,6 +112,12 @@ FrontlightPanelContext buildFrontlightPanelContext(Activity& activity, GfxRender
 
   const FrontlightBookSource source = chooseFrontlightBookSource(false, false, lastValid && !context.activeReaderBook);
 
+  // Transfer actions use the last EPUB even when reading stats are disabled.
+  if (source == FrontlightBookSource::LastBook) {
+    context.bookPath = APP_STATE.openEpubPath;
+    context.bookTitle = fileNameFromPath(context.bookPath);
+  }
+
   if (!SETTINGS.shouldTrackReadingStats()) return context;
   const GlobalReadingStats global = GlobalReadingStats::load();
   std::string cachePath;
@@ -119,8 +125,6 @@ FrontlightPanelContext buildFrontlightPanelContext(Activity& activity, GfxRender
   BookReadingStats bookStats;
   float progress = -1.0f;
   if (source == FrontlightBookSource::LastBook) {
-    context.bookPath = APP_STATE.openEpubPath;
-    context.bookTitle = fileNameFromPath(context.bookPath);
     statsTitle = context.bookTitle;
     cachePath = Epub::cachePathForFilePath(context.bookPath, "/.crosspoint");
     if (BookStatsTracking::isBookEnabled(cachePath))

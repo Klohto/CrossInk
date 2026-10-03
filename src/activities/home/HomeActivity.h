@@ -155,5 +155,4 @@ class HomeActivity final : public Activity {
   std::unique_ptr<Activity> createFrontlightReadingStatsActivity() override;
   void onFrontlightPanelOpened() override;
   void onFrontlightPanelClosed() override;
-  bool handleFrontlightPanelResult(const FrontlightPanelResult& result) override;
 };

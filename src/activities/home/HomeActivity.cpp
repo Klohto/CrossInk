@@ -30,7 +30,6 @@
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "GlobalActions.h"
-#include "KOReaderCredentialStore.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBookProgress.h"
@@ -1026,35 +1025,6 @@ void HomeActivity::onFrontlightPanelClosed() {
   bookStatsCached = false;
   updateHighlightedBookContext();
   requestUpdate();
-}
-
-bool HomeActivity::handleFrontlightPanelResult(const FrontlightPanelResult& result) {
-  if (result.bookPath.empty() || result.action == FrontlightPanelAction::None) return false;
-  if (result.action != FrontlightPanelAction::SyncProgress &&
-      result.action != FrontlightPanelAction::NearbyPositionSync &&
-      result.action != FrontlightPanelAction::SendNearbyBook) {
-    return false;
-  }
-
-  PendingOverlayResume resume;
-  resume.origin = PendingOverlayOrigin::Home;
-  resume.overlay = PendingOverlayType::FrontlightDrawer;
-  resume.selectedIndex = result.state.selectedAction;
-  resume.bookPath = result.bookPath;
-  resume.returnHomeAfterReaderFlow = result.action == FrontlightPanelAction::NearbyPositionSync;
-  if (result.action == FrontlightPanelAction::SyncProgress) {
-    if (KOREADER_STORE.hasCredentials()) APP_STATE.setPendingOverlayResume(resume);
-    return startGlobalSyncProgress();
-  }
-  if (result.action == FrontlightPanelAction::NearbyPositionSync) {
-    activityManager.goToReaderAndRunMenuAction(result.bookPath,
-                                               static_cast<uint8_t>(EpubReaderMenuAction::NEARBY_POSITION_SYNC));
-    APP_STATE.setPendingOverlayResume(std::move(resume));
-    return true;
-  }
-  if (!activityManager.goToNearbyBookSend(result.bookPath, false)) return false;
-  APP_STATE.setPendingOverlayResume(std::move(resume));
-  return true;
 }
 
 void HomeActivity::updateHighlightedBookContext(const bool allowChapterTitleRead) {

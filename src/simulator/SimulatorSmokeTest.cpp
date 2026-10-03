@@ -13,6 +13,8 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+
+#include "CrossPointState.h"
 #if CROSSINK_SCALABLE_FONTS
 #include <Epub/parsers/ChapterHtmlSlimParser.h>
 #include <HalScalableFont.h>
@@ -113,6 +115,12 @@ class SimulatorSmokeTest {
     AssertTtfProfileNative,
     OpenSmokeBook,
     OpenFrontlightSettings,
+    ClearFrontlightSyncBook,
+    PrepareFrontlightSync,
+    OpenFrontlightSync,
+    CheckFrontlightSync,
+    DisableReadingStats,
+    EnableReadingStats,
     DisableReaderTouch,
     EnableReaderTouch,
     TouchDown,
@@ -1388,6 +1396,12 @@ class SimulatorSmokeTest {
         break;
 
       case SmokeStep::FileBrowserSettings:
+        if (std::getenv("CROSSINK_SIMULATOR_SMOKE_FRONTLIGHT_SYNC")) {
+          if (!mappedInputManager.hasHomeKey()) fail("Frontlight sync regression requires X4 Pro simulator");
+          LOG_INF("SMOKE", "Frontlight sync: stats on/off menu and dispatch checks passed");
+          step = SmokeStep::Done;
+          break;
+        }
         prepareRecentLibrary();
         activityManager.goToLibrary();
         queueStep("Recent Library", SmokeStep::RecentLibrary);
@@ -2399,6 +2413,49 @@ class SimulatorSmokeTest {
       inputScript.push_back(render("File Browser restored after enabling reader touchscreen", 4));
       inputScript.push_back(assertActivity("FileBrowser"));
       inputScript.push_back(assertTouchscreenEnabled());
+      inputScript.push_back(
+          {ScriptActionType::ClearFrontlightSyncBook, MappedInputManager::Button::Back, nullptr, 0, 0, 0});
+      inputScript.push_back(touchDown(width / 2, 8));
+      inputScript.push_back(touchMove(width / 2, height / 4));
+      inputScript.push_back(touchRelease(width / 2, height / 4));
+      inputScript.push_back(render("Frontlight without last-read book", 4));
+      inputScript.push_back({ScriptActionType::OpenFrontlightSync, MappedInputManager::Button::Back, nullptr, 0, 0, 0});
+      inputScript.push_back(render("Unavailable transfer actions rendered", 4));
+      inputScript.push_back(
+          {ScriptActionType::CheckFrontlightSync, MappedInputManager::Button::Back, nullptr, 0, 1, 0});
+      inputScript.push_back(press(MappedInputManager::Button::Confirm));
+      inputScript.push_back(release(MappedInputManager::Button::Confirm));
+      inputScript.push_back(render("Unavailable transfer action cannot activate", 4));
+      inputScript.push_back(assertActivity("FrontlightPanel"));
+      inputScript.push_back(press(MappedInputManager::Button::Back));
+      inputScript.push_back(release(MappedInputManager::Button::Back));
+      inputScript.push_back(render("File Browser restored after unavailable transfer", 4));
+      inputScript.push_back(assertActivity("FileBrowser"));
+      inputScript.push_back(
+          {ScriptActionType::PrepareFrontlightSync, MappedInputManager::Button::Back, nullptr, 0, 0, 0});
+      for (const bool statsEnabled : {true, false}) {
+        inputScript.push_back(
+            {statsEnabled ? ScriptActionType::EnableReadingStats : ScriptActionType::DisableReadingStats,
+             MappedInputManager::Button::Back, nullptr, 0, 0, 0});
+        inputScript.push_back(touchDown(width / 2, 8));
+        inputScript.push_back(touchMove(width / 2, height / 4));
+        inputScript.push_back(touchRelease(width / 2, height / 4));
+        inputScript.push_back(render("Frontlight sync from File Browser", 4));
+        inputScript.push_back(
+            {ScriptActionType::OpenFrontlightSync, MappedInputManager::Button::Back, nullptr, 0, 0, 0});
+        inputScript.push_back(render("Frontlight sync menu rendered", 4));
+        inputScript.push_back(
+            {ScriptActionType::CheckFrontlightSync, MappedInputManager::Button::Back, nullptr, 0, 0, 0});
+        inputScript.push_back(press(MappedInputManager::Button::Confirm));
+        inputScript.push_back(release(MappedInputManager::Button::Confirm));
+        inputScript.push_back(render("Frontlight sync opens account settings", 4));
+        inputScript.push_back(assertActivity("KOReaderSettings"));
+        inputScript.push_back(press(MappedInputManager::Button::Back));
+        inputScript.push_back(release(MappedInputManager::Button::Back));
+        inputScript.push_back(render("File Browser restored after sync settings", 4));
+        inputScript.push_back(assertActivity("FileBrowser"));
+      }
+      inputScript.push_back({ScriptActionType::EnableReadingStats, MappedInputManager::Button::Back, nullptr, 0, 0, 0});
     }
 
     const Rect header = TouchHeaderBackButton::headerRect(renderer, mappedInputManager);
@@ -2425,6 +2482,58 @@ class SimulatorSmokeTest {
 
     const auto& action = inputScript[scriptIndex++];
     switch (action.type) {
+      case ScriptActionType::ClearFrontlightSyncBook:
+        APP_STATE.openEpubPath.clear();
+        break;
+      case ScriptActionType::PrepareFrontlightSync: {
+        const char* bookPath = std::getenv("CROSSINK_SIMULATOR_SMOKE_BOOK");
+        if (!bookPath || !Storage.exists(bookPath)) fail("Frontlight sync fixture is missing");
+        APP_STATE.openEpubPath = bookPath;
+        break;
+      }
+      case ScriptActionType::DisableReadingStats:
+        SETTINGS.trackReadingStats = 0;
+        break;
+      case ScriptActionType::EnableReadingStats:
+        SETTINGS.trackReadingStats = 1;
+        break;
+      case ScriptActionType::OpenFrontlightSync: {
+        auto* panel = dynamic_cast<FrontlightPanelActivity*>(activityManager.simulatorCurrentActivity());
+        if (!panel) fail("Expected frontlight drawer before opening sync menu");
+        panel->simulatorActivateQuickAction(1);
+        break;
+      }
+      case ScriptActionType::CheckFrontlightSync: {
+        auto* panel = dynamic_cast<FrontlightPanelActivity*>(activityManager.simulatorCurrentActivity());
+        if (!panel) fail("Expected frontlight sync menu");
+        const bool unavailable = action.x != 0;
+        for (int index = 0; index < 3; ++index) {
+          if (panel->simulatorSyncOptionDisabled(index) != unavailable)
+            fail("Unexpected transfer availability outside reader");
+          const auto row = panel->simulatorSyncOptionRect(index);
+          // Sample inside the row background, away from its centered label and rounded corners.
+          if (unavailable || index > 0) {
+            for (int offset = 0; offset < 8; ++offset)
+              if (renderer.isPixelBlack(row.x + row.width / 2 + offset, row.y + 4))
+                fail("Unselected sync option is highlighted");
+          }
+        }
+        if (const char* outputDir = std::getenv("CROSSINK_SIMULATOR_SMOKE_FRONTLIGHT_CAPTURES")) {
+          const auto path = std::filesystem::path(outputDir) / (unavailable                  ? "sync-no-book.pgm"
+                                                                : SETTINGS.trackReadingStats ? "sync-stats-on.pgm"
+                                                                                             : "sync-stats-off.pgm");
+          FILE* image = std::fopen(path.c_str(), "wb");
+          if (!image) fail("Cannot create sync menu capture");
+          RenderLock lock;
+          const int width = renderer.getScreenWidth();
+          const int height = renderer.getScreenHeight();
+          std::fprintf(image, "P5\n%d %d\n255\n", width, height);
+          for (int y = 0; y < height; ++y)
+            for (int x = 0; x < width; ++x) std::fputc(renderer.isPixelBlack(x, y) ? 0 : 255, image);
+          std::fclose(image);
+        }
+        break;
+      }
       case ScriptActionType::OpenFrontlightSettings: {
         auto* panel = dynamic_cast<FrontlightPanelActivity*>(activityManager.simulatorCurrentActivity());
         if (!panel) fail("Expected frontlight drawer before opening Settings");

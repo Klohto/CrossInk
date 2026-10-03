@@ -1216,15 +1216,13 @@ void BaseTheme::drawOptionPopup(const GfxRenderer& renderer, const char* title, 
     for (int visibleIndex = 0; visibleIndex < visibleCount; visibleIndex++) {
       const int optionIndex = visibleStart + visibleIndex;
       const int itemY = y + visibleIndex * (rowHeight + itemSpacing);
-      const bool selected = !saveFocused && optionIndex == safeSelectedIndex;
       const bool disabled = optionIndex < static_cast<int>(disabledOptions.size()) && disabledOptions[optionIndex];
+      const bool selected = !disabled && !saveFocused && optionIndex == safeSelectedIndex;
       const char* labelText = options[optionIndex].c_str();
 
-      if (metrics.optionPopupDrawAllRows || selected || disabled) {
+      if (metrics.optionPopupDrawAllRows || selected) {
         Color rowColor;
-        if (disabled) {
-          rowColor = Color::LightGray;
-        } else if (selected) {
+        if (selected) {
           rowColor = metrics.optionPopupSelectionLight ? Color::LightGray : Color::Black;
         } else {
           rowColor = Color::White;
@@ -1245,6 +1243,8 @@ void BaseTheme::drawOptionPopup(const GfxRenderer& renderer, const char* title, 
       // Selected on light bg: text stays dark (invert=true).
       const bool invertText = disabled || (selected ? metrics.optionPopupSelectionLight : true);
       renderer.drawText(optionFontId, textX, textY, labelText, invertText, style);
+      // Mark unavailable actions without shading their row like a selection.
+      if (disabled) renderer.drawLine(textX, textY + optionLineHeight / 2, textX + textW, textY + optionLineHeight / 2);
     }
   }
 

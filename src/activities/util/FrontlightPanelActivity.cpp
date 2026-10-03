@@ -1,6 +1,7 @@
 #include "FrontlightPanelActivity.h"
 
 #include <CrossInkHalFrontlight.h>
+#include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <Memory.h>
@@ -244,7 +245,7 @@ void FrontlightPanelActivity::openSyncDialog() {
   static constexpr std::array<StrId, 3> OPTIONS = {StrId::STR_SYNC_PROGRESS, StrId::STR_NEARBY_POSITION_SYNC,
                                                    StrId::STR_SEND_NEARBY_BOOK};
   drawerState.syncDialogOpen = true;
-  const bool canSyncBookProgress = context.activeEpub;
+  const bool canSyncBookProgress = FsHelpers::hasEpubExtension(context.bookPath);
   const bool canSendBook = !context.bookPath.empty();
   optionPopup.show(StrId::STR_SYNC_AND_TRANSFER, OPTIONS.data(), OPTIONS.size(), canSyncBookProgress ? 0 : 2,
                    [this](const int index) {

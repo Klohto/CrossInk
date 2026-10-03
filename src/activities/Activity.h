@@ -117,7 +117,7 @@ class Activity {
   virtual void persistGlobalSettings() { SETTINGS.saveToFile(); }
   virtual bool onFrontlightGlobalSettingsOpened() { return false; }
   virtual void onFrontlightGlobalSettingsClosed() {}
-  virtual bool handleFrontlightPanelResult(const FrontlightPanelResult&) { return false; }
+  virtual bool handleFrontlightPanelResult(const FrontlightPanelResult& result);
   virtual bool handleExternalReaderMenuAction(uint8_t) { return false; }
   virtual bool restorePendingOverlay(const PendingOverlayResume&) { return false; }
   virtual ScreenshotInfo getScreenshotInfo() const { return {}; }
