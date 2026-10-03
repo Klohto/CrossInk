@@ -1731,6 +1731,7 @@ class SimulatorSmokeTest {
           }
           std::fclose(image);
         }
+#if CROSSINK_APP_CAP_TOUCH
         const int x = handle.x + handle.width / 2;
         const int y = handle.y + handle.height / 2;
         inputScript = {touchDown(x, y), touchRelease(x, y), render("Frontlight closed by visible handle", 4),
@@ -1739,6 +1740,9 @@ class SimulatorSmokeTest {
         ++frontlightLayoutPass;
         inputCompletionStep = SmokeStep::FrontlightLayout;
         step = SmokeStep::ReaderInput;
+#else
+        fail("Frontlight layout regression requires the X4 Pro simulator");
+#endif
         break;
       }
 
