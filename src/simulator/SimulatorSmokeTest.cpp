@@ -9,6 +9,7 @@
 #include <Logging.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -884,6 +885,24 @@ class SimulatorSmokeTest {
     if (RecentBookProgress::loadCachedEpubPercent(book) != 42.5f || Storage.exists(legacy.c_str()) ||
         !Storage.exists(current.c_str()) || BookMetadataCache::exists(current))
       fail("Home did not recover legacy cached progress without opening the EPUB");
+    const std::string percentFile = current + "/progress_percent.bin";
+    const std::string hostPercentFile = "fs_" + percentFile;
+    // Force an old timestamp so this check does not depend on filesystem clock resolution.
+    const auto oldTime = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24);
+    std::filesystem::last_write_time(hostPercentFile, oldTime);
+    const auto savedTime = std::filesystem::last_write_time(hostPercentFile);
+    RecentBookProgress::saveCachedEpubPercent(current, 42.5001f);
+    if (std::filesystem::last_write_time(hostPercentFile) != savedTime)
+      fail("Saving the same rounded Home percentage rewrote the cache");
+    RecentBookProgress::saveCachedEpubPercent(current, 43.5f);
+    if (RecentBookProgress::loadCachedEpubPercent(book) != 43.5f) fail("Changed Home percentage was not saved");
+    std::filesystem::resize_file(hostPercentFile, 2);
+    RecentBookProgress::saveCachedEpubPercent(current, 43.5f);
+    if (RecentBookProgress::loadCachedEpubPercent(book) != 43.5f || std::filesystem::file_size(hostPercentFile) != 7)
+      fail("Saving Home percentage did not repair a truncated cache");
+    if (!Storage.remove(percentFile.c_str())) fail("Cannot remove Home percent fixture");
+    RecentBookProgress::saveCachedEpubPercent(current, 42.5f);
+    LOG_INF("SMOKE", "Home percentage skips unchanged writes and repairs missing/truncated caches");
     if (!Storage.mkdir(legacy.c_str())) fail("Cannot recreate stale legacy Home cache");
     RecentBookProgress::saveCachedEpubPercent(legacy, 90.0f);
     if (RecentBookProgress::loadCachedEpubPercent(book) != 42.5f || !Storage.exists(legacy.c_str()))

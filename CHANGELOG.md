@@ -44,6 +44,9 @@
 - Built-in fonts use less firmware space while preserving their supported characters, ligatures, kerning, and rendered appearance.
 
 - SD-card reads keep filesystem metadata cached separately from book and font data to reduce repeated card access.
+- Repeated EPUB progress saves avoid rewriting identical positions and Home percentages.
+- Restoring a position in a long EPUB chapter reads its page lookup table in small batches.
+- Library searches skip reading completion history for books that do not match the search.
 
 ### Fixed
 
