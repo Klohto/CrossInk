@@ -113,6 +113,7 @@ void LibraryActivity::onEnter() {
     app.setScreen(&LibraryActivity::listScreen, this);
     // The index survives a firmware reflash, but its first boot reconciliation
     // can still take time. Show feedback whenever that scan is due.
+    scanCancelledThisVisit = false;
     initialScanPending = sort != Sort::RecentlyRead &&
                          (library::libraryIndexNeedsRefresh() || !Storage.exists(library::libraryIndexPath()));
   }
@@ -121,8 +122,7 @@ void LibraryActivity::onEnter() {
   // The render task normally paints only after onEnter() returns.
   if (initialScanPending && requestUpdateAndWait() != RequestUpdateResult::Rendered) {
     RenderLock lock;
-    renderer.clearScreen();
-    GUI.drawPopup(renderer, tr(STR_LIBRARY_SCANNING));
+    drawScanScreen(tr(STR_LIBRARY_SCANNING));
   }
 
   {
@@ -150,6 +150,15 @@ void LibraryActivity::refreshIndexIfNeeded(const bool showScanning) {
     applyFilter();
     return;
   }
+  if (scanCancelledThisVisit) {
+    // Respect the cancel until the user asks for a refresh; keep showing
+    // whatever index is already on the card.
+    if (!index.isOpen() && !index.open(library::libraryIndexPath()))
+      index.openForReconciliation(library::libraryIndexPath());
+    uiReady = false;
+    applyFilter();
+    return;
+  }
   // Reuse the index across ordinary visits; still reconcile after cold boots, after
   // file changes, and when the format or metadata setting no longer matches.
   if (library::libraryIndexNeedsRefresh() || (!index.isOpen() && !index.open(library::libraryIndexPath())) ||
@@ -171,15 +180,29 @@ bool LibraryActivity::rebuildIndex(const bool showScanning) {
   }
   uiReady = false;
   index.close();
-  if (showScanning) GUI.drawPopup(renderer, tr(STR_LIBRARY_SCANNING));
+  if (showScanning) drawScanScreen(tr(STR_LIBRARY_SCANNING));
   library::BuildStats stats;
-  scanFailed = !library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0);
+  library::BuildCallbacks callbacks;
+  callbacks.context = this;
+  callbacks.cancelRequested = &LibraryActivity::scanCancelRequested;
+  callbacks.progress = &LibraryActivity::onScanProgress;
+  scanCancelledThisVisit = false;
+  scanBackHeldAtStart = mappedInput.isPressed(MappedInputManager::Button::Back);
+  scanFailed = !library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0, &callbacks);
+  scanFailureText = stats.failure == library::BuildFailure::Cancelled      ? StrId::STR_LIBRARY_SCAN_CANCELLED
+                    : stats.failure == library::BuildFailure::TooManyBooks ? StrId::STR_LIBRARY_TOO_MANY_BOOKS
+                                                                           : StrId::STR_LIBRARY_SCAN_FAILED;
+  if (stats.failure == library::BuildFailure::Cancelled) {
+    scanCancelledThisVisit = true;
+    ignoreBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
+  }
   if (scanFailed) LOG_ERR("LIB", "Library scan failed; retaining the previous index");
   if (!index.open(library::libraryIndexPath())) {
     // A failed one-time upgrade leaves the previous index on the card. Keep
     // its books readable while the next visit retries the rebuild.
     if (!scanFailed || !index.openForReconciliation(library::libraryIndexPath())) {
       LOG_ERR("LIB", "Cannot open library index");
+      if (!scanFailed) scanFailureText = StrId::STR_LIBRARY_SCAN_FAILED;
       scanFailed = true;
     } else {
       LOG_INF("LIB", "Using previous Library index until rebuild succeeds");
@@ -191,6 +214,61 @@ bool LibraryActivity::rebuildIndex(const bool showScanning) {
   }
   applyFilter();
   return !scanFailed;
+}
+
+bool LibraryActivity::scanTouchEnabled() const {
+  // hasTouch() also honours the Disable Touchscreen setting.
+  return mappedInput.hasTouch();
+}
+
+void LibraryActivity::drawScanScreen(const char* message) const {
+  renderer.clearScreen();
+  if (scanTouchEnabled()) {
+    int bounds[4]{};
+    renderer.getOrientedViewableTRBL(&bounds[0], &bounds[1], &bounds[2], &bounds[3]);
+    renderer.drawCenteredText(UI_10_FONT_ID,
+                              renderer.getScreenHeight() - bounds[2] - renderer.getLineHeight(UI_10_FONT_ID) * 2,
+                              tr(STR_TAP_TO_CANCEL));
+  } else {
+    const auto labels = mappedInput.mapLabels(tr(STR_CANCEL), "", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  }
+  // drawPopup() pushes the whole buffer, including the hint above.
+  GUI.drawPopup(renderer, message);
+}
+
+bool LibraryActivity::scanCancelRequested(void* context) {
+  auto* self = static_cast<LibraryActivity*>(context);
+  auto& input = self->mappedInput;
+  // The build blocks the main loop, so poll here as web uploads do.
+  input.update();
+  int x = 0;
+  int y = 0;
+  if (self->scanTouchEnabled() && input.wasScreenTouchDown(x, y)) {
+    // The release must not reach the list as a tap once the scan unwinds.
+    input.suppressCurrentTouchContact();
+    return true;
+  }
+  if (input.wasHomeGesture()) return true;
+  const bool backHeld = input.isPressed(MappedInputManager::Button::Back);
+  if (self->scanBackHeldAtStart) {
+    if (!backHeld) self->scanBackHeldAtStart = false;
+    return false;
+  }
+  // Polls stall during an EPUB parse, so a held button counts as well as a
+  // press edge.
+  return backHeld || input.wasPressed(MappedInputManager::Button::Back);
+}
+
+void LibraryActivity::onScanProgress(void* context, const library::BuildProgress& progress) {
+  const auto* self = static_cast<const LibraryActivity*>(context);
+  if (progress.phase == library::BuildPhase::Organizing) {
+    self->drawScanScreen(tr(STR_LIBRARY_ORGANIZING));
+    return;
+  }
+  char message[96];
+  snprintf(message, sizeof(message), tr(STR_LIBRARY_SCAN_COUNT), static_cast<unsigned>(progress.books));
+  self->drawScanScreen(message);
 }
 
 void LibraryActivity::readRecentBook(const size_t historyRow, RecentBook& book) const {
@@ -453,7 +531,7 @@ void LibraryActivity::resetViewport() {
 }
 
 void LibraryActivity::reloadAfterBookAction() {
-  refreshIndexIfNeeded();
+  refreshIndexIfNeeded(true);
   selection = std::min(selection, std::max(CONTROL_COUNT, CONTROL_COUNT + rowCount() - 1));
   listNav.selected = selection - CONTROL_COUNT;
   listNav.top = topIndex;
@@ -689,7 +767,14 @@ void LibraryActivity::latchInput() {
       break;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) queueInput(Type::ConfirmRelease);
-  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) queueInput(Type::BackRelease);
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    if (ignoreBackRelease)
+      ignoreBackRelease = false;
+    else
+      queueInput(Type::BackRelease);
+  } else if (ignoreBackRelease && !mappedInput.isPressed(MappedInputManager::Button::Back)) {
+    ignoreBackRelease = false;
+  }
   if (mappedInput.hasTouchHardware()) {
     buttonNavigator.onNextRelease([&] { queueInput(Type::Next); });
     buttonNavigator.onPreviousRelease([&] { queueInput(Type::Previous); });
@@ -1085,7 +1170,7 @@ void LibraryActivity::buildListScreen(UiApp::ScreenType& screen) {
     const auto warning = screen.take(fui::LayoutAnchor::Top, uiTarget.lineHeight(screen.theme().smallText.font) + 8);
     uiTarget.text(warning,
                   filterFailed ? tr(STR_LIBRARY_SEARCH_FAILED)
-                  : scanFailed ? tr(STR_LIBRARY_SCAN_FAILED)
+                  : scanFailed ? I18n::getInstance().get(scanFailureText)
                                : tr(STR_LIBRARY_UNSORTED),
                   screen.theme().smallText);
   }
@@ -1294,8 +1379,7 @@ bool LibraryActivity::loadGridCover(const int row) {
 void LibraryActivity::render(RenderLock&&) {
   uiReady = false;
   if (initialScanPending) {
-    renderer.clearScreen();
-    GUI.drawPopup(renderer, tr(STR_LIBRARY_SCANNING));
+    drawScanScreen(tr(STR_LIBRARY_SCANNING));
     return;
   }
   for (int pass = 0; pass < 8; ++pass) {
@@ -1348,6 +1432,8 @@ void LibraryActivity::promptDeleteBook(const RecentBook& book) {
     }
 
     library::invalidateLibraryIndex();
+    // The card changed, so a cancelled scan must not keep showing this book.
+    scanCancelledThisVisit = false;
     RECENT_BOOKS.removeByPath(path);
     reloadAfterBookAction();
   };

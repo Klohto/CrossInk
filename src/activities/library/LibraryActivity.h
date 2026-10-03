@@ -2,6 +2,7 @@
 
 #include <FreeInkApp.h>
 #include <FreeInkUIGfxRenderer.h>
+#include <LibraryBuilder.h>
 #include <LibraryIndexFile.h>
 
 #include <memory>
@@ -64,6 +65,14 @@ class LibraryActivity final : public Activity {
   bool initialScanPending = false;
   bool confirmLongPressCaptured = false;
   bool ignoreConfirmRelease = false;
+  // Set when the Back press that cancelled a scan is still held.
+  bool ignoreBackRelease = false;
+  // Back held when a scan starts belongs to whatever opened Library (a reader
+  // long-press shortcut, say); only a fresh press after its release cancels.
+  bool scanBackHeldAtStart = false;
+  // A cancelled scan stays cancelled for this visit: sort changes and book
+  // actions show the previous index instead of starting the scan again.
+  bool scanCancelledThisVisit = false;
   // These fields belong only to the input task, including during rendering.
   LibraryInputBuffer pendingInput;
   bool inputOverflow = false;
@@ -73,6 +82,7 @@ class LibraryActivity final : public Activity {
   int touchLastX = 0;
   int touchLastY = 0;
   bool scanFailed = false;
+  StrId scanFailureText = StrId::STR_LIBRARY_SCAN_FAILED;
   bool filterFailed = false;
   bool pendingCacheDeletedFeedback = false;
   unsigned long cacheDeletedFeedbackShowTime = 0;
@@ -119,6 +129,10 @@ class LibraryActivity final : public Activity {
   void handleInput(const LibraryInputBuffer::Event& input);
   void refreshIndexIfNeeded(bool showScanning = false);
   bool rebuildIndex(bool showScanning);
+  void drawScanScreen(const char* message) const;
+  bool scanTouchEnabled() const;
+  static bool scanCancelRequested(void* context);
+  static void onScanProgress(void* context, const library::BuildProgress& progress);
   void readRecentBook(size_t historyRow, RecentBook& book) const;
   void resolveRecents();
   void applyFilter();

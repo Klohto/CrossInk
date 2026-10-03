@@ -47,6 +47,7 @@
 - Repeated EPUB progress saves avoid rewriting identical positions and Home percentages.
 - Restoring a position in a long EPUB chapter reads its page lookup table in small batches.
 - Library searches skip reading completion history for books that do not match the search.
+- Library scans count the books found so far and can be cancelled with Back or a tap, keeping the previous Library. A card with more books than the Library can hold now says so instead of reporting a generic failure.
 
 ### Fixed
 

@@ -35,7 +35,17 @@ inline constexpr int LIBRARY_MAX_DEPTH = 5;
 // grow into abort() when a damaged or unusually flat directory is scanned.
 inline constexpr uint16_t LIBRARY_MAX_DEDUP_KEYS = 1024;
 
+// Why a build did not install a new index. Error covers I/O, allocation, and
+// card faults; the other values let the UI say something more useful.
+enum class BuildFailure : uint8_t {
+  None,
+  Error,
+  Cancelled,
+  TooManyBooks,
+};
+
 struct BuildStats {
+  BuildFailure failure = BuildFailure::None;
   uint16_t books = 0;
   uint16_t folders = 0;
   uint16_t duplicatesDropped = 0;
@@ -56,6 +66,31 @@ struct BuildStats {
   bool arrivalDegraded = false;
 };
 
+enum class BuildPhase : uint8_t {
+  Scanning,    // walking folders and reading book metadata; `books` counts what was found
+  Organizing,  // sorting and writing the finished index
+};
+
+struct BuildProgress {
+  BuildPhase phase = BuildPhase::Scanning;
+  uint16_t books = 0;
+};
+
+// Optional hooks for a foreground build. Plain function pointers keep the
+// library free of std::function; `context` is borrowed and passed back as-is.
+struct BuildCallbacks {
+  void* context = nullptr;
+  // Polled between bounded units of build work. Returning true stops the build
+  // and leaves the previous index installed.
+  bool (*cancelRequested)(void* context) = nullptr;
+  // Throttled to one call per LIBRARY_PROGRESS_INTERVAL_MS, plus one at each
+  // phase change, because every call usually repaints an e-ink panel.
+  void (*progress)(void* context, const BuildProgress& progress) = nullptr;
+};
+
+inline constexpr uint32_t LIBRARY_CANCEL_POLL_MS = 50;
+inline constexpr uint32_t LIBRARY_PROGRESS_INTERVAL_MS = 3000;
+
 // Walk `rootPath`, write `/.crosspoint/library.idx`, and report what happened.
 // The previous index, including its monotonic "recently added" counter, is read
 // internally so callers cannot accidentally split one rebuild state across two
@@ -64,7 +99,9 @@ struct BuildStats {
 // stops the normal EPUB parser at the end of <metadata>, before the manifest,
 // without building the reader's spine, TOC, CSS, or section caches. Unchanged
 // books reuse these values from the prior Library index.
-bool buildLibraryIndex(const char* rootPath, BuildStats& stats, bool readMetadata = false);
+// `callbacks` may be null.
+bool buildLibraryIndex(const char* rootPath, BuildStats& stats, bool readMetadata = false,
+                       const BuildCallbacks* callbacks = nullptr);
 
 // Starts dirty on cold boots to reconcile external card edits. File-changing
 // activities must invalidate before returning to Library. A successful scan

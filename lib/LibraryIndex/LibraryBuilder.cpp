@@ -107,12 +107,60 @@ bool sortKeyLess(const SortKey& a, const SortKey& b) {
   return a.ordinal < b.ordinal;
 }
 
+// Hooks for the one foreground build. Builds never overlap, so file scope
+// avoids threading the callbacks through every phase helper.
+struct BuildControl {
+  const BuildCallbacks* callbacks = nullptr;
+  BuildProgress progress;
+  BuildProgress reported;
+  uint32_t lastPollMs = 0;
+  uint32_t lastProgressMs = 0;
+  bool cancelled = false;
+};
+BuildControl buildControl;
+
+bool buildCancelled() { return buildControl.cancelled; }
+
+void reportProgress() {
+  const BuildCallbacks* callbacks = buildControl.callbacks;
+  if (!callbacks || !callbacks->progress) return;
+  callbacks->progress(callbacks->context, buildControl.progress);
+  buildControl.reported = buildControl.progress;
+  // Measured after the callback, so a slow e-ink refresh does not eat the interval.
+  buildControl.lastProgressMs = millis();
+}
+
+void pollBuildControl() {
+  const BuildCallbacks* callbacks = buildControl.callbacks;
+  if (!callbacks || buildControl.cancelled) return;
+  if (callbacks->cancelRequested && millis() - buildControl.lastPollMs >= LIBRARY_CANCEL_POLL_MS) {
+    const bool cancel = callbacks->cancelRequested(callbacks->context);
+    buildControl.lastPollMs = millis();
+    if (cancel) {
+      LOG_INF("LIBIDX", "build cancelled; keeping the previous index");
+      buildControl.cancelled = true;
+      return;
+    }
+  }
+  // Each report repaints the panel, so skip it when nothing visible changed.
+  const bool changed = buildControl.progress.phase != buildControl.reported.phase ||
+                       buildControl.progress.books != buildControl.reported.books;
+  if (changed && millis() - buildControl.lastProgressMs >= LIBRARY_PROGRESS_INTERVAL_MS) reportProgress();
+}
+
+void setBuildPhase(const BuildPhase phase) {
+  if (buildControl.progress.phase == phase) return;
+  buildControl.progress.phase = phase;
+  reportProgress();
+}
+
 // Let FreeRTOS run the idle task during every long phase, including builds
 // without a UI callback and the sort/emit work after the directory walk. The
 // counter keeps the delay out of tight per-byte operations while bounding CPU
-// work between yields.
+// work between yields. Cancellation and progress ride on the same calls.
 void serviceBuilder(uint32_t& workUnits) {
   if ((++workUnits & 0x1Fu) == 0) delay(1);
+  pollBuildControl();
 }
 
 // Only ties need another read. At most 11 fixed-size segments are considered,
@@ -123,7 +171,7 @@ bool refineSortKeyTies(SortKey* keys, const uint16_t begin, const uint16_t end, 
   if (end - begin < 2 || offset >= keyBytes) return true;
   for (uint16_t i = begin; i < end; i++) {
     serviceBuilder(serviceUnits);
-    if (!loadSegment(keys[i].ordinal, offset, keys[i].key)) return false;
+    if (buildCancelled() || !loadSegment(keys[i].ordinal, offset, keys[i].key)) return false;
   }
   std::sort(keys + begin, keys + end, sortKeyLess);
   uint16_t run = begin;
@@ -521,6 +569,7 @@ int findPrior(WalkState& st, const uint64_t pathHash) {
 
   st.stageOut->write(&entry, STAGE_STRIDE);
   st.books++;
+  buildControl.progress.books = st.books;
   return true;
 }
 
@@ -566,6 +615,7 @@ void walk(WalkState& st, const std::string& path, const int depth) {
 
   for (HalFile entry = dir.openNextFile(); entry; entry = dir.openNextFile()) {
     serviceBuilder(st.serviceUnits);
+    if (buildCancelled()) st.failed = true;
     if (st.failed) {
       entry.close();
       break;
@@ -636,6 +686,7 @@ void walk(WalkState& st, const std::string& path, const int depth) {
     if (st.books >= CLIX_MAX_RECORDS) {
       LOG_ERR("LIBIDX", "library exceeds the %u-book index limit; keeping the previous index",
               static_cast<unsigned>(CLIX_MAX_RECORDS));
+      st.stats->failure = BuildFailure::TooManyBooks;
       st.failed = true;
       break;
     }
@@ -722,6 +773,7 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
   // leaves a file that still passes the header check when the header describes
   // what was intended rather than what landed.
   const auto put = [&outBuffer, &ioFailed](const void* data, const size_t len) {
+    if (buildCancelled()) ioFailed = true;
     if (ioFailed) return;
     outBuffer.write(data, len);
   };
@@ -736,6 +788,7 @@ bool emitIndex(const char* folderStagePath, WalkState& st, const uint16_t* order
     }
   };
   const auto readStageAt = [&stage, &ioFailed](const uint64_t offset, void* data, const size_t len) {
+    if (buildCancelled()) ioFailed = true;
     if (ioFailed) return false;
     if (!stage.seekSet(offset) || stage.read(reinterpret_cast<uint8_t*>(data), len) != static_cast<int>(len)) {
       LOG_ERR("LIBIDX", "record stage read failed at %u", static_cast<unsigned>(offset));
@@ -1345,6 +1398,7 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
 
       for (uint16_t i = 0; i < priorCount; i++) {
         serviceBuilder(serviceUnits);
+        if (buildCancelled()) return false;
         ClixRecord r{};
         uint64_t pathHash = 0;
         if (!previous.readRecord(i, r) || !previous.readPathHash(r, pathHash)) {
@@ -1399,6 +1453,13 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
 
   if (st.failed || !stageFlushed || !stageClosed || !foldersClosed) {
     LOG_ERR("LIBIDX", "staging failed; keeping the previous index");
+    Storage.remove(STAGE_PATH);
+    Storage.remove(folderStagePath.c_str());
+    return false;
+  }
+
+  setBuildPhase(BuildPhase::Organizing);
+  if (buildCancelled()) {
     Storage.remove(STAGE_PATH);
     Storage.remove(folderStagePath.c_str());
     return false;
@@ -1467,7 +1528,7 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
     for (uint16_t i = 0; i < st.books; i++) {
       serviceBuilder(serviceUnits);
       ClixRecord r{};
-      if (!read.seekSet(static_cast<uint64_t>(i) * STAGE_STRIDE) ||
+      if (buildCancelled() || !read.seekSet(static_cast<uint64_t>(i) * STAGE_STRIDE) ||
           read.read(reinterpret_cast<uint8_t*>(&r), sizeof(r)) != static_cast<int>(sizeof(r))) {
         LOG_ERR("LIBIDX", "firstSeen reconciliation: short read at record %u", static_cast<unsigned>(i));
         read.close();
@@ -1560,7 +1621,7 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
         serviceBuilder(serviceUnits);
         ClixRecord r{};
         const uint64_t offset = static_cast<uint64_t>(i) * STAGE_STRIDE;
-        if (!stage.seekSet(offset) ||
+        if (buildCancelled() || !stage.seekSet(offset) ||
             stage.read(reinterpret_cast<uint8_t*>(&r), sizeof(r)) != static_cast<int>(sizeof(r))) {
           LOG_ERR("LIBIDX", "title sort: record stage read failed at %u", static_cast<unsigned>(offset));
           stage.close();
@@ -1632,11 +1693,18 @@ bool libraryIndexNeedsRefresh() { return indexDirty.load(std::memory_order_relax
 
 void restoreLibraryIndexAfterSleep() { indexDirty.store(false, std::memory_order_relaxed); }
 
-bool buildLibraryIndex(const char* rootPath, BuildStats& stats, const bool readMetadata) {
+bool buildLibraryIndex(const char* rootPath, BuildStats& stats, const bool readMetadata,
+                       const BuildCallbacks* callbacks) {
   // Clear before scanning, not after: a file mutation during the scan must
   // survive as a request for another reconciliation. Builds are foreground-only.
   indexDirty.exchange(false, std::memory_order_relaxed);
+  buildControl = BuildControl{};
+  buildControl.callbacks = callbacks;
+  buildControl.lastPollMs = buildControl.lastProgressMs = millis();
   const bool ok = rebuildLibraryIndex(rootPath, stats, readMetadata);
+  if (!ok && stats.failure == BuildFailure::None)
+    stats.failure = buildControl.cancelled ? BuildFailure::Cancelled : BuildFailure::Error;
+  buildControl = BuildControl{};
   if (!ok || stats.unreadableSkipped || stats.ranksDegraded || stats.dedupDegraded || stats.arrivalDegraded)
     invalidateLibraryIndex();
   return ok;
