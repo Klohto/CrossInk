@@ -47,6 +47,8 @@
 - Repeated EPUB progress saves avoid rewriting identical positions and Home percentages.
 - Restoring a position in a long EPUB chapter reads its page lookup table in small batches.
 - Library searches skip reading completion history for books that do not match the search.
+- Library scans count the books found so far and can be cancelled with Back or a tap, keeping the previous Library. A card with more books than the Library can hold now says so instead of reporting a generic failure.
+- Library keeps book metadata as each EPUB is read, so a cancelled or interrupted scan resumes where it stopped instead of starting over.
 
 ### Fixed
 
@@ -97,6 +99,8 @@
 - Holding Power to wake from sleep no longer also opens Quick Actions or runs a reader shortcut.
 - Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
 - Reopen EPUBs on the last page read after following in-book links, and retain the three most recent Back destinations across closing, sleep, and KOReader sync. Transient footnote previews still return to their immediate reading page.
+- On X4 Pro and Sticky, Library indexes up to 32,767 books instead of failing on cards with more than 4,096.
+- On X3 and X4, Library also indexes up to 32,767 books. Sorting uses the SD card once a library outgrows a fixed memory buffer, so a large library uses no more memory than a small one.
 
 ### Security
 
