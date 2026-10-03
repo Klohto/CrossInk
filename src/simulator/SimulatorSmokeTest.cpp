@@ -68,6 +68,8 @@ enum class SmokeStep : uint8_t {
   Reader,
   ReaderInput,
   CarouselHome,
+  FrontlightLayout,
+  FrontlightLayoutRendered,
   ThemeHome,
   ThemeSettings,
   ThemeReturned,
@@ -137,6 +139,7 @@ class SimulatorSmokeTest {
   std::filesystem::file_time_type carouselSecondWrittenAt;
   uint64_t carouselCacheHash = 0;
   uint64_t carouselScreenHash = 0;
+  unsigned frontlightLayoutPass = 0;
   unsigned homeThemePass = 0;
   uint64_t homeThemeScreenHash = 0;
   std::string homeThemeBookPath;
@@ -988,6 +991,13 @@ class SimulatorSmokeTest {
           queueStep("Initial carousel Home", SmokeStep::ThemeHome, 8);
           break;
         }
+        if (std::getenv("CROSSINK_SIMULATOR_SMOKE_FRONTLIGHT_LAYOUT")) {
+          if (!mappedInputManager.hasHomeKey() || !mappedInputManager.hasTouchHardware())
+            fail("Frontlight layout regression requires the X4 Pro simulator");
+          activityManager.replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInputManager));
+          queueStep("Frontlight layout Home", SmokeStep::FrontlightLayout, 4);
+          break;
+        }
         verifyLoadingPopupBackdrop();
         verifyCachedHomeProgressMigration();
         if (!CrossPointSettings::verifySleepTimeoutMigrationContract()) {
@@ -1477,6 +1487,71 @@ class SimulatorSmokeTest {
       case SmokeStep::CarouselHome:
         verifyCarouselCacheReturn();
         break;
+
+      case SmokeStep::FrontlightLayout: {
+        // Both scales, all four orientations, and all eight themes, with and
+        // without the additional reader progress row.
+        if (frontlightLayoutPass == 128) {
+          LOG_INF("SMOKE", "Frontlight layout: 128 scale/orientation/theme/context combinations passed");
+          step = SmokeStep::Done;
+          break;
+        }
+        {
+          RenderLock lock;
+          SETTINGS.uiScale =
+              (frontlightLayoutPass / 64) ? CrossPointSettings::UI_SCALE_LARGE : CrossPointSettings::UI_SCALE_SMALL;
+          SETTINGS.uiTheme = (frontlightLayoutPass / 8) % 8;
+          renderer.setOrientation(static_cast<GfxRenderer::Orientation>((frontlightLayoutPass / 2) % 4));
+          UITheme::getInstance().reload();
+        }
+        FrontlightPanelContext context;
+        context.activeReaderBook = frontlightLayoutPass % 2;
+        if (context.activeReaderBook) {
+          context.bookTitle = "Layout fixture";
+          context.bookDetails.title = context.bookTitle;
+          context.bookDetails.chapterPage = 1;
+          context.bookDetails.chapterPageCount = 10;
+        }
+        activityManager.pushActivity(
+            std::make_unique<FrontlightPanelActivity>(renderer, mappedInputManager, std::move(context)));
+        queueStep("Frontlight layout matrix", SmokeStep::FrontlightLayoutRendered, 4);
+        break;
+      }
+
+      case SmokeStep::FrontlightLayoutRendered: {
+        auto* panel = dynamic_cast<FrontlightPanelActivity*>(activityManager.simulatorCurrentActivity());
+        if (!panel) fail("Layout matrix expected frontlight drawer");
+        const auto handle = panel->simulatorHandleRect();
+        int top, right, bottom, left;
+        renderer.getOrientedViewableTRBL(&top, &right, &bottom, &left);
+        if (handle.y < top || handle.bottom() > renderer.getScreenHeight() - bottom || handle.x < left ||
+            handle.right() > renderer.getScreenWidth() - right || handle.height <= 0 ||
+            panel->simulatorContentBottom > panel->simulatorActionBarTop) {
+          fail("Frontlight controls overflow in layout matrix case %u", frontlightLayoutPass);
+        }
+        if (const char* outputDir = std::getenv("CROSSINK_SIMULATOR_SMOKE_FRONTLIGHT_CAPTURES")) {
+          const auto path = std::filesystem::path(outputDir) / (std::to_string(frontlightLayoutPass) + ".pgm");
+          FILE* image = std::fopen(path.c_str(), "wb");
+          if (!image) fail("Cannot create frontlight layout capture");
+          RenderLock lock;
+          const int width = renderer.getScreenWidth();
+          const int height = renderer.getScreenHeight();
+          std::fprintf(image, "P5\n%d %d\n255\n", width, height);
+          for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) std::fputc(renderer.isPixelBlack(x, y) ? 0 : 255, image);
+          }
+          std::fclose(image);
+        }
+        const int x = handle.x + handle.width / 2;
+        const int y = handle.y + handle.height / 2;
+        inputScript = {touchDown(x, y), touchRelease(x, y), render("Frontlight closed by visible handle", 4),
+                       assertActivity("Home")};
+        scriptIndex = 0;
+        ++frontlightLayoutPass;
+        inputCompletionStep = SmokeStep::FrontlightLayout;
+        step = SmokeStep::ReaderInput;
+        break;
+      }
 
       case SmokeStep::ThemeHome: {
 #if CROSSINK_APP_CAP_TOUCH
