@@ -1,5 +1,7 @@
 #pragma once
 
+#include <fcntl.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -221,6 +223,15 @@ class HalStorage {
       file.node = found->second;
       file.path = path;
     }
+    return file;
+  }
+  HalFile open(const char* path, const int oflag) {
+    if ((oflag & O_CREAT) != 0 && !exists(path)) {
+      if (!fake::failOpenPath.empty() && fake::failOpenPath == path) return open(path);
+      fake::add(path, "");
+    }
+    HalFile file = open(path);
+    if (file && (oflag & O_TRUNC) != 0) file.node->bytes.clear();
     return file;
   }
   bool openFileForRead(const char*, const char* path, HalFile& file) {

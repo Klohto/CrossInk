@@ -11,6 +11,7 @@
 #include "LibraryBuilder.h"
 #include "LibraryFileTypes.h"
 #include "LibraryIndexFile.h"
+#include "LibraryMetadataCache.h"
 #include "LibraryText.h"
 
 using namespace library;
@@ -53,6 +54,13 @@ bool recordAtPath(LibraryIndexFile& index, const std::string& path, ClixRecord& 
     }
   }
   return false;
+}
+
+// Firmware that wrote an older index format never wrote the metadata cache,
+// so upgrade tests start without one.
+void dropMetadataCache() {
+  Storage.remove(LibraryMetadataCache::slotPath());
+  Storage.remove(LibraryMetadataCache::payloadPath());
 }
 
 // Build a genuine V5 name section by removing each V6 position and updating
@@ -430,6 +438,7 @@ TEST_F(LibraryBuilderTest, VersionThreeIndexReparsesSeriesOrderDuringUpgrade) {
   // Two-book v3 and v6 indexes have the same aligned nameStart. The v3
   // permutation section ends early, leaving padding before the name blob.
   fake::files[INDEX]->bytes[offsetof(ClixHeader, formatVersion)] = 3;
+  dropMetadataCache();
   fake::parses = 0;
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::parses, 2u);
@@ -458,6 +467,7 @@ TEST_F(LibraryBuilderTest, VersionFiveIndexReparsesSeriesPositionsAndKeepsArriva
   before.close();
 
   ASSERT_TRUE(downgradeIndexToVersionFive());
+  dropMetadataCache();
   fake::parses = 0;
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::parses, 2u);
@@ -559,6 +569,7 @@ TEST_F(LibraryBuilderTest, VersionFourIndexKeepsFirstSeenDuringUpgrade) {
   // name section. This models an old index without changing its record data.
   fake::files[INDEX]->bytes[offsetof(ClixHeader, formatVersion)] = 4;
   fake::files[INDEX]->bytes[offsetof(ClixHeader, foldVersion)] = 1;
+  dropMetadataCache();
   fake::parses = 0;
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::parses, 2u);
@@ -588,6 +599,7 @@ TEST_F(LibraryBuilderTest, InterruptedUpgradeRestoresVersionThreeBackup) {
   fake::files[BACKUP] = std::make_shared<fake::Node>(*fake::files[INDEX]);
   fake::files[BACKUP]->bytes[offsetof(ClixHeader, formatVersion)] = 3;
   fake::files[INDEX]->bytes[0] = 'X';  // Damaged live index after install.
+  dropMetadataCache();
   fake::parses = 0;
 
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
@@ -631,6 +643,7 @@ TEST_F(LibraryBuilderTest, VersionTwoIndexRebuildKeepsFirstSeenOrder) {
   // The old format has the same header and record stride. Reconciliation only
   // needs those records and path hashes; its shorter metadata blob is replaced.
   fake::files[INDEX]->bytes[offsetof(ClixHeader, formatVersion)] = 2;
+  dropMetadataCache();
   fake::parses = 0;
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::parses, 2u);
@@ -688,6 +701,22 @@ TEST_F(LibraryBuilderTest, MetadataModeChangesInvalidateCachedMetadata) {
   EXPECT_EQ(index.header().metadataEnabled, 0);
   index.close();
 
+  // Metadata parsed by the first build survives the round trip through the
+  // metadata-off index in the persistent cache.
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 0u);
+  EXPECT_EQ(stats.metadataCached, 2);
+  ASSERT_TRUE(index.open(INDEX));
+  EXPECT_EQ(index.header().metadataEnabled, 1);
+  ClixRecord record{};
+  ASSERT_TRUE(recordAtPath(index, "/a.epub", record));
+  std::string title;
+  ASSERT_TRUE(index.readTitle(record, title));
+  EXPECT_EQ(title, "Title");
+  index.close();
+
+  dropMetadataCache();
+  ASSERT_TRUE(buildLibraryIndex("/", stats, false));
   ASSERT_TRUE(buildLibraryIndex("/", stats, true));
   EXPECT_EQ(fake::parses, 2u);
 }
@@ -1180,4 +1209,100 @@ TEST_F(LibraryBuilderTest, ProgressReportsBooksFoundAndTheOrganizingPhase) {
   EXPECT_GT(probe.progressCalls, 0u);
   EXPECT_TRUE(probe.sawOrganizing);
   EXPECT_EQ(probe.booksWhenOrganizing, 42);
+}
+
+TEST_F(LibraryBuilderTest, CancelledScanKeepsParsedMetadataForTheNextScan) {
+  for (unsigned i = 0; i < 40; i++) {
+    const std::string path = "/book" + numbered("", i) + ".epub";
+    fake::add(path, "book" + numbered("", i), 7);
+    bookMetadata[path].title = numbered("Title ", i);
+    bookMetadata[path].series = "Series";
+    bookMetadata[path].seriesIndex = std::to_string(i);
+  }
+
+  BuildProbe probe;
+  probe.cancelAfterParses = 5;
+  const BuildCallbacks callbacks = probe.callbacks();
+  EXPECT_FALSE(buildLibraryIndex("/", stats, true, &callbacks));
+  EXPECT_EQ(stats.failure, BuildFailure::Cancelled);
+  EXPECT_FALSE(Storage.exists(INDEX));
+  const unsigned parsedBeforeCancel = fake::parses;
+  ASSERT_GE(parsedBeforeCancel, 5u);
+  ASSERT_LT(parsedBeforeCancel, 42u);
+
+  fake::parses = 0;
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 42u - parsedBeforeCancel);
+  EXPECT_EQ(stats.metadataCached, parsedBeforeCancel);
+  EXPECT_EQ(stats.parsed, 42u - parsedBeforeCancel);
+
+  LibraryIndexFile index;
+  ASSERT_TRUE(index.open(INDEX));
+  for (unsigned i = 0; i < 40; i++) {
+    ClixRecord record{};
+    const std::string path = "/book" + numbered("", i) + ".epub";
+    ASSERT_TRUE(recordAtPath(index, path, record)) << path;
+    EXPECT_EQ(record.metadataStatus, CLIX_METADATA_EXTRACTED);
+    std::string title;
+    std::string series;
+    ASSERT_TRUE(index.readTitle(record, title));
+    ASSERT_TRUE(index.readSeries(record, series));
+    EXPECT_EQ(title, numbered("Title ", i));
+    EXPECT_EQ(series, "Series");
+  }
+  EXPECT_EQ(pathAt(index, SortOrder::SeriesAsc, 0), "/book0000.epub");
+  EXPECT_EQ(pathAt(index, SortOrder::SeriesAsc, 39), "/book0039.epub");
+}
+
+TEST_F(LibraryBuilderTest, CachedMetadataIsIgnoredOnceTheBookChanges) {
+  initial();
+  // Lose the previous index, so only the cache can supply metadata.
+  Storage.remove(INDEX);
+  bookMetadata["/a.epub"].title = "Edited";
+  fake::files["/a.epub"]->time++;
+  fake::parses = 0;
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 1u);
+  EXPECT_EQ(stats.metadataCached, 1);
+
+  LibraryIndexFile index;
+  ASSERT_TRUE(index.open(INDEX));
+  ClixRecord record{};
+  ASSERT_TRUE(recordAtPath(index, "/a.epub", record));
+  std::string title;
+  ASSERT_TRUE(index.readTitle(record, title));
+  EXPECT_EQ(title, "Edited");
+}
+
+TEST_F(LibraryBuilderTest, DamagedCachedMetadataIsReparsedRatherThanTrusted) {
+  initial();
+  Storage.remove(INDEX);
+  auto& payload = fake::files[LibraryMetadataCache::payloadPath()]->bytes;
+  ASSERT_FALSE(payload.empty());
+  for (auto& byte : payload) byte ^= 0x5A;
+  fake::parses = 0;
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 2u);
+  EXPECT_EQ(stats.metadataCached, 0);
+
+  // A cache from another version is discarded wholesale.
+  Storage.remove(INDEX);
+  fake::files[LibraryMetadataCache::slotPath()]->bytes[4] = 99;
+  fake::parses = 0;
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 2u);
+  Storage.remove(INDEX);
+  fake::parses = 0;
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 0u);
+}
+
+TEST_F(LibraryBuilderTest, FailedExtractionIsNotCached) {
+  bookMetadata["/a.epub"].success = false;
+  initial();
+  Storage.remove(INDEX);
+  fake::parses = 0;
+  ASSERT_TRUE(buildLibraryIndex("/", stats, true));
+  EXPECT_EQ(fake::parses, 1u);
+  EXPECT_EQ(stats.metadataCached, 1);
 }

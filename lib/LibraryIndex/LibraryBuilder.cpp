@@ -21,6 +21,7 @@
 #include "../../src/util/BookCacheUtils.h"
 #include "LibraryFileTypes.h"
 #include "LibraryIndexFile.h"
+#include "LibraryMetadataCache.h"
 #include "LibraryText.h"
 
 namespace library {
@@ -365,6 +366,8 @@ struct WalkState {
   bool creationTimesUnchanged = true;
   bool readMetadata = false;
   LibraryIndexFile* previous = nullptr;
+  // Parses kept across cancelled or failed builds; null when metadata is off.
+  LibraryMetadataCache* metadataCache = nullptr;
   BuildStats* stats = nullptr;
   uint16_t enriched = 0;
   HalFile folders;  // folder section, staged separately then copied in
@@ -475,7 +478,25 @@ int findPrior(WalkState& st, const uint64_t pathHash) {
   // An EPUB that changed or is new gets a short OPF metadata read. The reader
   // cache does not contain series or genre, so only our own index can reuse
   // those fields without parsing the book again.
-  if (!reuseMetadata && extractionExpected) {
+  CachedBookMetadata cached;
+  const bool cacheHit = !reuseMetadata && extractionExpected && st.metadataCache &&
+                        st.metadataCache->lookup(entry.pathHash, fileSize, modificationTime, cached);
+  if (cacheHit) {
+    // A hit was parsed from these exact bytes, after any stale reader cache
+    // for them had already been cleared, so neither step repeats.
+    st.stats->metadataCached++;
+    entry.record.metadataStatus = CLIX_METADATA_EXTRACTED;
+    entry.seriesPosition = cached.seriesPosition;
+    if (!cached.title.empty()) {
+      title = std::move(cached.title);
+      titleFromBook = true;
+    }
+    author = std::move(cached.author);
+    series = std::move(cached.series);
+    genre = std::move(cached.genre);
+    authorFromBook = !author.empty();
+  }
+  if (!reuseMetadata && extractionExpected && !cacheHit) {
     st.stats->parsed++;
     Epub epub(fullPath, CACHE_DIR);
     std::string bookTitle;
@@ -493,6 +514,16 @@ int findPrior(WalkState& st, const uint64_t pathHash) {
     if (epub.loadMetadata(bookTitle, author, !sourceChanged, &series, &genre, &seriesIndex)) {
       entry.record.metadataStatus = CLIX_METADATA_EXTRACTED;
       entry.seriesPosition = parseSeriesPosition(seriesIndex);
+      // Failures are not cached: they may come from low memory or a card
+      // glitch, and the next scan should simply try again.
+      if (st.metadataCache) {
+        cached.title = bookTitle;
+        cached.author = author;
+        cached.series = series;
+        cached.genre = genre;
+        cached.seriesPosition = entry.seriesPosition;
+        st.metadataCache->store(entry.pathHash, fileSize, modificationTime, cached);
+      }
       if (!bookTitle.empty()) {
         title = std::move(bookTitle);
         titleFromBook = true;
@@ -1428,6 +1459,11 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   st.readMetadata = readMetadata;
   st.previous = previous.isOpen() ? &previous : nullptr;
   st.stats = &stats;
+  LibraryMetadataCache metadataCache;
+  if (readMetadata) {
+    metadataCache.open(nullptr, &buildCancelled);
+    st.metadataCache = &metadataCache;
+  }
 
   if (!Storage.openFileForWrite("LIBIDX", STAGE_PATH, st.stage) ||
       !Storage.openFileForWrite("LIBIDX", folderStagePath, st.folders)) {
@@ -1449,6 +1485,8 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   }
   const bool stageClosed = st.stage.close();
   const bool foldersClosed = st.folders.close();
+  st.metadataCache = nullptr;
+  metadataCache.close();
   LOG_DBG("LIBIDX", "phase walk/metadata/stage: %ums", static_cast<unsigned>(millis() - walkStartMs));
 
   if (st.failed || !stageFlushed || !stageClosed || !foldersClosed) {
@@ -1675,11 +1713,13 @@ static bool rebuildLibraryIndex(const char* rootPath, BuildStats& stats, const b
   stats.walkMs = millis() - startMs;
   stats.indexReplaced = ok;
   LOG_INF("LIBIDX",
-          "%s: %u books, %u folders, %u parsed, %u metadata reused, replaced %u, %u dup dropped, %u unreadable, %ums",
+          "%s: %u books, %u folders, %u parsed, %u metadata reused, %u cached, replaced %u, %u dup dropped, "
+          "%u unreadable, %ums",
           ok ? "built" : "FAILED", static_cast<unsigned>(stats.books), static_cast<unsigned>(stats.folders),
           static_cast<unsigned>(stats.parsed), static_cast<unsigned>(stats.metadataReused),
-          static_cast<unsigned>(stats.indexReplaced), static_cast<unsigned>(stats.duplicatesDropped),
-          static_cast<unsigned>(stats.unreadableSkipped), static_cast<unsigned>(stats.walkMs));
+          static_cast<unsigned>(stats.metadataCached), static_cast<unsigned>(stats.indexReplaced),
+          static_cast<unsigned>(stats.duplicatesDropped), static_cast<unsigned>(stats.unreadableSkipped),
+          static_cast<unsigned>(stats.walkMs));
   return ok;
 }
 

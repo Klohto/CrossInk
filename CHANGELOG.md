@@ -48,6 +48,7 @@
 - Restoring a position in a long EPUB chapter reads its page lookup table in small batches.
 - Library searches skip reading completion history for books that do not match the search.
 - Library scans count the books found so far and can be cancelled with Back or a tap, keeping the previous Library. A card with more books than the Library can hold now says so instead of reporting a generic failure.
+- Library keeps book metadata as each EPUB is read, so a cancelled or interrupted scan resumes where it stopped instead of starting over.
 
 ### Fixed
 

@@ -60,6 +60,7 @@ struct BuildStats {
   uint16_t enriched = 0;   // took its title or author from the book rather than the filename
   uint16_t parsed = 0;     // EPUB metadata reads performed by this build
   uint16_t metadataReused = 0;
+  uint16_t metadataCached = 0;  // EPUB metadata restored from library.meta instead of parsed
   bool indexReplaced = false;
   bool ranksDegraded = false;
   bool dedupDegraded = false;
