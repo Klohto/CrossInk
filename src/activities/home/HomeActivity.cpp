@@ -7,8 +7,6 @@
 #include <HalDisplay.h>
 #include <HalStorage.h>
 #include <I18n.h>
-#include <LibraryBuilder.h>
-#include <LibraryIndexFile.h>
 #include <Memory.h>
 #include <MemoryBudget.h>
 #include <Serialization.h>
@@ -573,57 +571,6 @@ void HomeActivity::loadRecentBooks(int maxBooks) {
   }
 }
 
-void HomeActivity::fillCoverGridFromLibrary() {
-  if (recentBooks.size() >= CoverGridHomeUi::MAX_BOOKS) return;
-
-  struct LibraryReader {
-    library::LibraryIndexFile index;
-    library::ClixRecord record;
-  };
-  auto reader = makeUniqueNoThrow<LibraryReader>();
-  if (!reader) {
-    LOG_ERR("HOME", "Cannot allocate library index reader for cover grid");
-    return;
-  }
-  auto& index = reader->index;
-  const bool indexOpen = index.open(library::libraryIndexPath());
-  const bool needsRefresh = library::libraryIndexNeedsRefresh() || !indexOpen ||
-                            index.header().metadataEnabled != static_cast<uint8_t>(SETTINGS.libraryUseMetadata != 0);
-  if (needsRefresh) {
-    index.close();
-    // Home has not painted yet. Give the same visible scan feedback as Library
-    // before rebuilding an index for a large SD card.
-    {
-      RenderLock lock;
-      renderer.clearScreen();
-      GUI.drawPopup(renderer, tr(STR_LIBRARY_SCANNING));
-      renderer.displayBuffer(initialRefreshMode);
-      initialRefreshMode = HalDisplay::FAST_REFRESH;
-    }
-    library::BuildStats stats;
-    if (!library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0) ||
-        !index.open(library::libraryIndexPath())) {
-      LOG_ERR("HOME", "Cannot populate cover grid from library index");
-      return;
-    }
-  }
-
-  for (uint16_t row = 0; row < index.bookCount() && recentBooks.size() < CoverGridHomeUi::MAX_BOOKS; ++row) {
-    RecentBook book;
-    const uint16_t ordinal = index.ordinalForRow(library::SortOrder::RecentDesc, row);
-    if (ordinal == 0xffff || !index.readRecord(ordinal, reader->record) || !index.readPath(reader->record, book.path)) {
-      continue;
-    }
-    if (std::any_of(recentBooks.begin(), recentBooks.end(),
-                    [&book](const RecentBook& existing) { return existing.path == book.path; }) ||
-        RecentBooksStore::isMissing(book)) {
-      continue;
-    }
-    if (!index.readDisplayText(reader->record, book.title, book.author)) continue;
-    recentBooks.push_back(std::move(book));
-  }
-}
-
 void HomeActivity::loadCoverGridThumbnails() {
   recentsLoading = true;
   bool showingLoading = false;
@@ -898,7 +845,6 @@ void HomeActivity::onEnter() {
   RECENT_BOOKS.ensureLoaded();
   loadRecentBooks(recentBooksToLoad);
   gridHasContinueReading = !recentBooks.empty();
-  if (coverGridUi) fillCoverGridFromLibrary();
 
   const auto selectInitialBook = [this, &metrics](const std::string& path) {
     if (path.empty()) {

@@ -128,7 +128,6 @@ class HomeActivity final : public Activity {
   void showNextRecentBookOnHome();
   void updateHighlightedBookContext(bool allowChapterTitleRead = true);
   void loadRecentBooks(int maxBooks);
-  void fillCoverGridFromLibrary();
   void loadCoverGridThumbnails();
   void activateCoverGridSelection();
   void loadAllBookStats();

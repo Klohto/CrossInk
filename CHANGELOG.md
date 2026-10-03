@@ -13,7 +13,7 @@
 - View a selected book's reading stats from its Library or File Browser action menu.
 - Reset a book's reader settings from the in-reader Settings tab.
 - View chapter pages and book progress in the X4 Pro frontlight drawer while reading.
-- Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
+- Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six recently opened books.
 - Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
 - EPUB headings and whole text blocks can use different font sizes with built-in scalable fonts and TTF fonts on ESP32-S3 devices.
 - Add a Display toggle to swap Library and File Browser on the Minimal and Dashboard home screens.
