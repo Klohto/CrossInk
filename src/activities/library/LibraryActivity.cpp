@@ -138,7 +138,8 @@ void LibraryActivity::onEnter() {
 void LibraryActivity::onExit() {
   pendingInput.clear();
   index.close();
-  filtered.reset();
+  filterBits.reset();
+  filterRanks.reset();
   Activity::onExit();
 }
 
@@ -379,8 +380,28 @@ void LibraryActivity::loadGridProgress() {
 
 uint16_t LibraryActivity::ordinalForRow(const int row) {
   if (sort == Sort::RecentlyRead || row < 0 || row >= rowCount()) return UINT16_MAX;
-  if (hasActiveFilter()) return filtered ? filtered[row] : UINT16_MAX;
+  if (hasActiveFilter()) {
+    const uint16_t sourceRow = filteredSourceRow(static_cast<uint16_t>(row));
+    return sourceRow == UINT16_MAX ? UINT16_MAX : index.ordinalForRow(filterOrder, sourceRow);
+  }
   return index.ordinalForRow(indexOrder(), static_cast<uint16_t>(row));
+}
+
+// Position in filterOrder of the row-th match: find its block by the running
+// counts, then count bits within that block.
+uint16_t LibraryActivity::filteredSourceRow(const uint16_t row) const {
+  // Sized when the filter ran: the index may be closed (count 0) while a row
+  // is still drawn before the activity swaps out.
+  if (!filterBits || !filterRanks || row >= filteredCount || filterSourceCount == 0) return UINT16_MAX;
+  const uint16_t blocks = (filterSourceCount + FILTER_BLOCK_ROWS - 1) / FILTER_BLOCK_ROWS;
+  uint16_t block = static_cast<uint16_t>(std::upper_bound(filterRanks.get(), filterRanks.get() + blocks, row) -
+                                         filterRanks.get() - 1);
+  uint16_t seen = filterRanks[block];
+  for (uint32_t source = static_cast<uint32_t>(block) * FILTER_BLOCK_ROWS; source < filterSourceCount; source++) {
+    if ((filterBits[source / 8] & (1u << (source % 8))) == 0) continue;
+    if (seen++ == row) return static_cast<uint16_t>(source);
+  }
+  return UINT16_MAX;
 }
 
 bool LibraryActivity::readBook(const int row, RecentBook& book, const bool fullPath) {
@@ -408,7 +429,9 @@ bool LibraryActivity::readBook(const int row, RecentBook& book, const bool fullP
 void LibraryActivity::applyFilter() {
   filteredCount = 0;
   filterFailed = false;
-  filtered.reset();
+  filterBits.reset();
+  filterRanks.reset();
+  filterSourceCount = 0;
   if (sort == Sort::RecentlyRead) {
     resolveRecents();
     return;
@@ -416,9 +439,14 @@ void LibraryActivity::applyFilter() {
   if (!hasActiveFilter() || !index.isOpen() || index.bookCount() == 0) return;
   const uint16_t sourceCount = index.bookCount();
   if (sourceCount == 0) return;
-  filtered = makeUniqueNoThrow<uint16_t[]>(sourceCount);
-  if (!filtered) {
+  filterOrder = indexOrder();
+  filterSourceCount = sourceCount;
+  filterBits = makeUniqueNoThrow<uint8_t[]>((sourceCount + 7u) / 8u);
+  filterRanks = makeUniqueNoThrow<uint16_t[]>((sourceCount + FILTER_BLOCK_ROWS - 1u) / FILTER_BLOCK_ROWS);
+  if (!filterBits || !filterRanks) {
     LOG_ERR("LIB", "Cannot allocate Library search results");
+    filterBits.reset();
+    filterRanks.reset();
     filterFailed = true;
     return;
   }
@@ -458,7 +486,8 @@ void LibraryActivity::applyFilter() {
   };
   for (uint16_t row = 0; row < sourceCount; ++row) {
     if ((row & 31) == 31) delay(1);
-    const uint16_t ordinal = index.ordinalForRow(indexOrder(), row);
+    if (row % FILTER_BLOCK_ROWS == 0) filterRanks[row / FILTER_BLOCK_ROWS] = filteredCount;
+    const uint16_t ordinal = index.ordinalForRow(filterOrder, row);
     library::ClixRecord record{};
     if (ordinal == UINT16_MAX || !index.readRecord(ordinal, record) || !index.readName(record, name)) {
       LOG_ERR("LIB", "Cannot read Library search data");
@@ -513,7 +542,8 @@ void LibraryActivity::applyFilter() {
       }
       if (!cachePath.empty() && BookReadingStats::load(cachePath).isCompleted) continue;
     }
-    filtered[filteredCount++] = ordinal;
+    filterBits[row / 8] |= static_cast<uint8_t>(1u << (row % 8));
+    filteredCount++;
   }
 }
 

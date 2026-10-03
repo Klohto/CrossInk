@@ -8,8 +8,10 @@
 // Shape of the build, and why:
 //
 //   * ONE walk. Records go straight into a staging file in discovery order, so
-//     nothing proportional to the library stays resident. Phase-local sort arrays
-//     are fallible and released before the next large allocation.
+//     nothing proportional to the library stays resident. The previous index is
+//     matched through a sorted file with a small in-RAM fence, and every order
+//     is sorted in bounded runs (LibrarySort.h) whose buffer is the only sizable
+//     allocation after the walk: 32 KiB on the C3, the whole sort in PSRAM.
 //   * Duplicate directory entries are dropped. A damaged FAT can hand the same
 //     file out twice, and without this the shelf shows phantom books that
 //     cannot be opened.
@@ -92,9 +94,8 @@ struct BuildCallbacks {
 inline constexpr uint32_t LIBRARY_CANCEL_POLL_MS = 50;
 inline constexpr uint32_t LIBRARY_PROGRESS_INTERVAL_MS = 3000;
 
-// Books one build can index on this device. Devices without PSRAM hold every
-// per-book sort array in internal RAM, which bounds them well below the format
-// ceiling; PSRAM devices reach CLIX_MAX_RECORDS.
+// Books one build can index. Sorting spills bounded runs to the card, so RAM
+// does not limit this on any device; the format ceiling does.
 uint16_t libraryBookLimit();
 
 // Walk `rootPath`, write `/.crosspoint/library.idx`, and report what happened.

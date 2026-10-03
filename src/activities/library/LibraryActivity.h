@@ -87,8 +87,14 @@ class LibraryActivity final : public Activity {
   bool pendingCacheDeletedFeedback = false;
   unsigned long cacheDeletedFeedbackShowTime = 0;
   std::string query;
-  // Searches and file-type filters allocate one u16 per visible source book, fallibly.
-  std::unique_ptr<uint16_t[]> filtered;
+  // Searches and filters keep one bit per indexed book plus a running count per
+  // 256-book block: about 4 KiB at the format ceiling, where a u16 per match
+  // would need 64 KiB of contiguous C3 heap. Bits are positions in filterOrder.
+  static constexpr uint16_t FILTER_BLOCK_ROWS = 256;
+  std::unique_ptr<uint8_t[]> filterBits;
+  std::unique_ptr<uint16_t[]> filterRanks;
+  library::SortOrder filterOrder = library::SortOrder::TitleAsc;
+  uint16_t filterSourceCount = 0;
   uint16_t filteredCount = 0;
   // Indices into the bounded recent-books history, independent of the Library index.
   uint16_t recentRows[RecentBooksStore::MAX_RECENT_BOOKS]{};
@@ -119,6 +125,7 @@ class LibraryActivity final : public Activity {
   library::SortOrder indexOrder() const;
   int rowCount() const;
   uint16_t ordinalForRow(int row);
+  uint16_t filteredSourceRow(uint16_t row) const;
   bool readBook(int row, RecentBook& book, bool fullPath = true);
   uint32_t groupForRow(int row);
   uint16_t dateGroupForRow(int row);

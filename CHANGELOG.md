@@ -100,6 +100,7 @@
 - Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
 - Reopen EPUBs on the last page read after following in-book links, and retain the three most recent Back destinations across closing, sleep, and KOReader sync. Transient footnote previews still return to their immediate reading page.
 - On X4 Pro and Sticky, Library indexes up to 32,767 books instead of failing on cards with more than 4,096.
+- On X3 and X4, Library also indexes up to 32,767 books. Sorting uses the SD card once a library outgrows a fixed memory buffer, so a large library uses no more memory than a small one.
 
 ### Security
 

@@ -45,3 +45,15 @@ inline HeapByteBuffer makeAlignedByteBufferNoThrow(const size_t count, const Mem
   }
   return HeapByteBuffer(static_cast<uint8_t*>(std::malloc(count)));
 }
+
+template <typename F>
+struct [[nodiscard]] ScopedCleanup final {
+  const F fn;
+  explicit ScopedCleanup(F f) : fn{std::move(f)} {}
+  ScopedCleanup(const ScopedCleanup&) = delete;
+  ScopedCleanup& operator=(const ScopedCleanup&) = delete;
+  ~ScopedCleanup() { fn(); }
+};
+
+template <typename F>
+ScopedCleanup(F) -> ScopedCleanup<F>;
