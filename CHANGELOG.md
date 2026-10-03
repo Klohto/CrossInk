@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Fixed
+
+- Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
+
 ## [v1.6.1] - 2026-09-30
 
 ### Added
@@ -87,6 +93,7 @@
 - Short upscaled images are cached after decoding instead of being repeatedly decoded on refresh.
 - OPDS asks before replacing books, validates completed downloads, checks available space, and preserves the old book if a transfer or replacement fails.
 - Holding Power to wake from sleep no longer also opens Quick Actions or runs a reader shortcut.
+- Correct X3 battery capacity calibration when the fuel gauge still uses its factory default or an oversized learned capacity.
 
 ### Security
 
