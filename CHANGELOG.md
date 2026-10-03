@@ -16,6 +16,7 @@
 - Add a Cover Grid Home theme on devices with PSRAM, showing the current book and six library covers.
 - Show small EPUB images within the surrounding text line instead of separating them from the paragraph.
 - EPUB headings and whole text blocks can use different font sizes with built-in scalable fonts and TTF fonts on ESP32-S3 devices.
+- Add a Display toggle to swap Library and File Browser on the Minimal and Dashboard home screens.
 
 ### Changed
 

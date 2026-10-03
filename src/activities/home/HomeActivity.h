@@ -98,6 +98,7 @@ class HomeActivity final : public Activity {
 
   void onSelectBook(const std::string& path);
   void onFileBrowserOpen();
+  void onMinimalBrowseOpen();
   void onContinueReading();
   void onLibraryOpen();
   void onSettingsOpen();
