@@ -43,7 +43,9 @@
 #include "activities/reader/SideButtonShortcuts.h"
 #include "activities/settings/QuickActionsActivity.h"
 #include "activities/settings/SettingsActivity.h"
+#include "activities/settings/StatusBarSettingsActivity.h"
 #include "activities/util/FrontlightPanelActivity.h"
+#include "components/HeaderDate.h"
 #include "components/TouchHeaderBackButton.h"
 #include "components/UITheme.h"
 #include "simulator/SimulatorHomeKeyInput.h"
@@ -76,6 +78,8 @@ enum class SmokeStep : uint8_t {
   ThemeSettings,
   ThemeReturned,
   ThemeFresh,
+  StatusBarEditor,
+  StatusBarPicker,
   Done,
 };
 
@@ -244,6 +248,54 @@ class SimulatorSmokeTest {
     mappedInputManager.setReaderMode(false);
     LOG_INF("SMOKE", "All 25 mixed page gesture combinations passed");
 #endif
+  }
+
+  static void verifyStatusBarSettings() {
+    JsonDocument original;
+    SETTINGS.toJson(original);
+    for (const int clock : {0, 1}) {
+      JsonDocument legacy;
+      legacy.set(original);
+      legacy.remove("displayStatusBar");
+      legacy["showClockOutsideReader"] = clock;
+      SETTINGS.fromJson(legacy.as<JsonVariantConst>());
+      if (SETTINGS.displayStatusBar.slots[1] != (clock ? ReaderStatusBarItem::Clock : ReaderStatusBarItem::Empty) ||
+          SETTINGS.displayStatusBar.slots[2] != ReaderStatusBarItem::Battery)
+        fail("Display clock migration failed");
+    }
+    SETTINGS.displayStatusBar.slots = {ReaderStatusBarItem::Date, ReaderStatusBarItem::Clock,
+                                       ReaderStatusBarItem::Empty};
+    JsonDocument saved;
+    SETTINGS.toJson(saved);
+    if (!saved["showClockOutsideReader"].isNull()) fail("Obsolete clock setting was saved");
+    SETTINGS.displayStatusBar = DisplayStatusBarConfig{};
+    SETTINGS.fromJson(saved.as<JsonVariantConst>());
+    if (SETTINGS.displayStatusBar.slots[0] != ReaderStatusBarItem::Date ||
+        SETTINGS.displayStatusBar.slots[1] != ReaderStatusBarItem::Clock ||
+        SETTINGS.displayStatusBar.slots[2] != ReaderStatusBarItem::Empty)
+      fail("Display slots did not survive reload");
+    const auto display = buildGroupedDisplaySettingsList(getSettingsList());
+    if (std::none_of(display.begin(), display.end(),
+                     [](const auto& item) { return item.action == SettingAction::DisplayStatusBar; }))
+      fail("Display status bar setting is missing");
+    SETTINGS.fromJson(original.as<JsonVariantConst>());
+    LOG_INF("SMOKE", "Display status bar migration and persistence passed");
+  }
+
+  static void captureStatusBarScreen(const char* name) {
+    const char* output = std::getenv("CROSSINK_SIMULATOR_SMOKE_STATUS_BAR_CAPTURES");
+    if (!output) return;
+    std::filesystem::create_directories(output);
+    const auto path = std::filesystem::path(output) / (std::string(name) + ".pgm");
+    FILE* image = std::fopen(path.c_str(), "wb");
+    if (!image) fail("Cannot create status bar capture");
+    const int width = renderer.getScreenWidth();
+    const int height = renderer.getScreenHeight();
+    std::fprintf(image, "P5\n%d %d\n255\n", width, height);
+    for (int y = 0; y < height; ++y) {
+      for (int x = 0; x < width; ++x) std::fputc(renderer.isPixelBlack(x, y) ? 0 : 255, image);
+    }
+    std::fclose(image);
   }
 
   static void verifyReaderControlsSettings() {
@@ -1044,6 +1096,19 @@ class SimulatorSmokeTest {
     switch (step) {
       case SmokeStep::Start:
         LOG_INF("SMOKE", "Starting simulator smoke test");
+        if (std::getenv("CROSSINK_SIMULATOR_SMOKE_STATUS_BARS")) {
+          verifyStatusBarSettings();
+          SETTINGS.clockDateHasBeenSynced = true;
+          SETTINGS.dateFormat = CrossPointSettings::DATE_FORMAT_YEAR_MONTH_DAY_NUMERIC;
+          SETTINGS.dateSeparator = CrossPointSettings::DATE_SEPARATOR_HYPHEN;
+          SETTINGS.displayStatusBar.slots = {ReaderStatusBarItem::Clock, ReaderStatusBarItem::Date,
+                                             ReaderStatusBarItem::Battery};
+          activityManager.replaceActivity(
+              std::make_unique<StatusBarSettingsActivity>(renderer, mappedInputManager, false, false, true));
+          queueStep("Display status bar editor", SmokeStep::StatusBarEditor, 4);
+          break;
+        }
+
         if (std::getenv("CROSSINK_SIMULATOR_SMOKE_HOME_THEMES")) {
           if (!mappedInputManager.hasHomeKey() || !mappedInputManager.hasTouchHardware())
             fail("Home theme regression requires the X4 Pro simulator");
@@ -1081,6 +1146,7 @@ class SimulatorSmokeTest {
         verifyUpDownShortcutAvailability();
         verifySideButtonMigrationAndInput();
         verifyReaderControlsSettings();
+        verifyStatusBarSettings();
         verifyMixedPageGestures();
 #if CROSSINK_SCALABLE_FONTS
         verifyBlockFontSizes(sdFontSystem.ensureBuiltInReaderFont(renderer));
@@ -1474,6 +1540,39 @@ class SimulatorSmokeTest {
         activityManager.goToSettings();
         queueStep(mappedInputManager.hasHomeKey() ? "Settings landscape" : "Settings", SmokeStep::Settings);
         break;
+      }
+
+      case SmokeStep::StatusBarEditor: {
+        {
+          RenderLock lock;
+          captureStatusBarScreen("display-editor");
+        }
+        inputScript = {press(MappedInputManager::Button::Confirm), release(MappedInputManager::Button::Confirm),
+                       render("Display status bar picker", 4)};
+        scriptIndex = 0;
+        inputCompletionStep = SmokeStep::StatusBarPicker;
+        step = SmokeStep::ReaderInput;
+        break;
+      }
+      case SmokeStep::StatusBarPicker: {
+        RenderLock lock;
+        captureStatusBarScreen("display-picker");
+        for (const uint8_t theme : {CrossPointSettings::CLASSIC, CrossPointSettings::MINIMAL, CrossPointSettings::LYRA,
+                                    CrossPointSettings::ROUNDEDRAFF, CrossPointSettings::DASHBOARD}) {
+          SETTINGS.uiTheme = theme;
+          UITheme::getInstance().reload();
+          const auto& metrics = UITheme::getInstance().getMetrics();
+          for (unsigned format = 0; format < CrossPointSettings::DATE_FORMAT_COUNT; ++format) {
+            SETTINGS.dateFormat = format;
+            renderer.clearScreen();
+            GUI.drawHeader(renderer, Rect{0, metrics.topPadding, renderer.getScreenWidth(), metrics.headerHeight},
+                           tr(STR_SETTINGS_TITLE));
+            const auto name = "header-" + std::to_string(theme) + "-date-" + std::to_string(format);
+            captureStatusBarScreen(name.c_str());
+          }
+        }
+        LOG_INF("SMOKE", "Simulator smoke test passed: status bar editor, picker and themed date headers");
+        std::_Exit(0);
       }
 
       case SmokeStep::Settings:
