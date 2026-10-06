@@ -438,11 +438,11 @@ static void convertScanlineToGray(const PngDecodeContext& ctx, uint8_t* grayRow)
         // Fast path: most common EPUB cover format
         for (uint32_t x = 0; x < w; x++) {
           const uint8_t* p = src + x * 3;
-          grayRow[x] = (p[0] * 25 + p[1] * 50 + p[2] * 25) / 100;
+          grayRow[x] = (p[0] + p[1] * 2 + p[2]) >> 2;
         }
       } else {
         for (uint32_t x = 0; x < w; x++) {
-          grayRow[x] = (src[x * 6] * 25 + src[x * 6 + 2] * 50 + src[x * 6 + 4] * 25) / 100;
+          grayRow[x] = (src[x * 6] + src[x * 6 + 2] * 2 + src[x * 6 + 4]) >> 2;
         }
       }
       break;
@@ -456,7 +456,7 @@ static void convertScanlineToGray(const PngDecodeContext& ctx, uint8_t* grayRow)
         int shift = (ppb - 1 - (x % ppb)) * ctx.bitDepth;
         uint8_t idx = (src[x / ppb] >> shift) & mask;
         if (idx >= palSize) idx = 0;
-        grayRow[x] = (pal[idx * 3] * 25 + pal[idx * 3 + 1] * 50 + pal[idx * 3 + 2] * 25) / 100;
+        grayRow[x] = (pal[idx * 3] + pal[idx * 3 + 1] * 2 + pal[idx * 3 + 2]) >> 2;
       }
       break;
     }
@@ -473,11 +473,11 @@ static void convertScanlineToGray(const PngDecodeContext& ctx, uint8_t* grayRow)
       if (ctx.bitDepth == 8) {
         for (uint32_t x = 0; x < w; x++) {
           const uint8_t* p = src + x * 4;
-          grayRow[x] = (p[0] * 25 + p[1] * 50 + p[2] * 25) / 100;
+          grayRow[x] = (p[0] + p[1] * 2 + p[2]) >> 2;
         }
       } else {
         for (uint32_t x = 0; x < w; x++) {
-          grayRow[x] = (src[x * 8] * 25 + src[x * 8 + 2] * 50 + src[x * 8 + 4] * 25) / 100;
+          grayRow[x] = (src[x * 8] + src[x * 8 + 2] * 2 + src[x * 8 + 4]) >> 2;
         }
       }
       break;
@@ -538,6 +538,14 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
 
   if (width > MAX_IMAGE_WIDTH || height > MAX_IMAGE_HEIGHT || width == 0 || height == 0) {
     LOG_ERR("PNG", "Image too large or zero (%ux%u)", width, height);
+    return false;
+  }
+
+  const bool validBitDepth = bitDepth == 8 || (bitDepth == 16 && colorType != PNG_COLOR_PALETTE) ||
+                             ((colorType == PNG_COLOR_GRAYSCALE || colorType == PNG_COLOR_PALETTE) &&
+                              (bitDepth == 1 || bitDepth == 2 || bitDepth == 4));
+  if (!validBitDepth) {
+    LOG_ERR("PNG", "Unsupported bit depth %u for color type %u", bitDepth, colorType);
     return false;
   }
 
@@ -743,8 +751,15 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
       break;
     }
 
+    const uint64_t srcY_fp = static_cast<uint64_t>(y + 1) << 16;
+    if (needsScaling && srcY_fp <= geometry.srcYOffset_fp) {
+      std::swap(ctx.currentRow, ctx.previousRow);
+      continue;
+    }
+
     // Batch-convert entire scanline to grayscale (one branch, tight loop)
     convertScanlineToGray(ctx, grayRow);
+    std::swap(ctx.currentRow, ctx.previousRow);
 
     if (!needsScaling) {
       // Direct output (no scaling)
@@ -786,17 +801,11 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
       bmpOut.write(rowBuffer, bytesPerRow);
       yieldDuringDecode(rowsSinceYield);
     } else {
-      const uint64_t srcY_fp = static_cast<uint64_t>(y + 1) << 16;
-      if (srcY_fp <= geometry.srcYOffset_fp) {
-        continue;
-      }
-
       // Area-averaging scaling (same as JpegToBmpConverter)
+      uint64_t srcXEnd_fp = geometry.srcXOffset_fp;
       for (int outX = 0; outX < outWidth; outX++) {
-        const uint64_t srcXStart_fp =
-            static_cast<uint64_t>(geometry.srcXOffset_fp) + static_cast<uint64_t>(outX) * geometry.scaleX_fp;
-        const uint64_t srcXEnd_fp =
-            static_cast<uint64_t>(geometry.srcXOffset_fp) + static_cast<uint64_t>(outX + 1) * geometry.scaleX_fp;
+        const uint64_t srcXStart_fp = srcXEnd_fp;
+        srcXEnd_fp += geometry.scaleX_fp;
         const int srcXStart = std::min(static_cast<int>(width) - 1, static_cast<int>(srcXStart_fp >> 16));
         const int srcXEnd = std::min(static_cast<int>(width), static_cast<int>(srcXEnd_fp >> 16));
 
@@ -862,8 +871,7 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
         currentOutY++;
         yieldDuringDecode(rowsSinceYield);
 
-        nextOutY_srcStart = static_cast<uint32_t>(static_cast<uint64_t>(geometry.srcYOffset_fp) +
-                                                  static_cast<uint64_t>(currentOutY + 1) * geometry.scaleY_fp);
+        nextOutY_srcStart += geometry.scaleY_fp;
 
         // For upscaling: don't reset accumulators if next output row uses same source data
         // Only reset when we'll move to a new source row
@@ -876,11 +884,6 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
         memset(rowCount.get(), 0, outWidth * sizeof(uint32_t));
       }
     }
-
-    // Swap current/previous row buffers
-    uint8_t* temp = ctx.previousRow;
-    ctx.previousRow = ctx.currentRow;
-    ctx.currentRow = temp;
   }
 
   if (success) {

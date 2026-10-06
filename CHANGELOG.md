@@ -8,6 +8,7 @@
 - Decode ASCII characters directly before the UTF-8 length check. Keep the cursor at the terminating zero.
 - Read glyphs in the first font interval directly. Later character ranges keep the binary search.
 - Resolve character fallback and glyph data together during text drawing and measurement.
+- Advance PNG sampling positions with addition. Use the same grayscale weights with fewer arithmetic steps when creating covers.
 - Skip ligature searches when the first character is outside the sorted table.
 - Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
 - Skip packed groups of four white glyph pixels. They leave every framebuffer plane alone.
@@ -26,6 +27,7 @@
 
 ### Fixed
 
+- Keep PNG row-filter state when a cover crop skips source rows. Reject unsupported PNG bit depths before allocating or writing output.
 - Remove the blank screen refresh when the image viewer exits. The next activity draws its screen.
 
 ## [v1.6.1] - 2026-10-03
