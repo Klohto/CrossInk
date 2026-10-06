@@ -203,23 +203,19 @@ int utf8CodepointLen(const unsigned char c) {
 }
 
 uint32_t utf8NextCodepoint(const unsigned char** string) {
-  if (**string == 0) {
-    return 0;
+  const unsigned char lead = **string;
+  if (lead < 0x80) {
+    if (lead != 0) (*string)++;
+    return lead;
   }
 
-  const unsigned char lead = **string;
   const int bytes = utf8CodepointLen(lead);
   const uint8_t* chr = *string;
 
   // Invalid lead byte (stray continuation byte 0x80-0xBF, or 0xFE/0xFF)
-  if (bytes == 1 && lead >= 0x80) {
-    (*string)++;
-    return REPLACEMENT_GLYPH;
-  }
-
   if (bytes == 1) {
     (*string)++;
-    return chr[0];
+    return REPLACEMENT_GLYPH;
   }
 
   // Validate continuation bytes before consuming them

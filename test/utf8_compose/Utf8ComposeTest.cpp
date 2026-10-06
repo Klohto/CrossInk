@@ -41,6 +41,17 @@ TEST(Utf8SafeTruncateBuffer, DropsAnIncompleteLeadingCodepoint) {
   EXPECT_EQ(utf8SafeTruncateBuffer(incomplete.data(), static_cast<int>(incomplete.size())), 0);
 }
 
+TEST(Utf8NextCodepoint, RetainsTerminatorAndConsumesOneAsciiByte) {
+  for (unsigned int value = 0; value < 128; ++value) {
+    const unsigned char bytes[] = {static_cast<unsigned char>(value), 0};
+    const unsigned char* cursor = bytes;
+    EXPECT_EQ(utf8NextCodepoint(&cursor), value);
+    EXPECT_EQ(cursor, bytes + (value != 0));
+    EXPECT_EQ(utf8NextCodepoint(&cursor), 0);
+    EXPECT_EQ(cursor, bytes + (value != 0));
+  }
+}
+
 // Single combining mark composes onto its base letter.
 TEST_P(Utf8ComposeNfc, ComposesSingleMark) {
   EXPECT_EQ(compose("e" + kCombAcute), "\xC3\xA9");  // e + ́  -> é  (U+00E9)

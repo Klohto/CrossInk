@@ -5,6 +5,7 @@
 - Map the requested input button once. Skip unused front and side mappings during each input poll.
 - Publish completed store singletons through a lock-free pointer. Settings reads avoid repeated runtime guard locks.
 - Skip Unicode range scans when a character is below the first supported range. Use this path during layout, font fallback and dictionary lookup.
+- Decode ASCII characters directly before the UTF-8 length check. Keep the cursor at the terminating zero.
 - Read glyphs in the first font interval directly. Later character ranges keep the binary search.
 - Skip ligature searches when the first character is outside the sorted table.
 - Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
