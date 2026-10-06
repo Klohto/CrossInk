@@ -1,5 +1,7 @@
 #include "ActivityManager.h"
 
+#include "util/InputWorkPriority.h"
+
 #if CROSSINK_SCALABLE_FONTS
 #include <HalScalableFont.h>
 #endif
@@ -822,6 +824,7 @@ void ActivityManager::notifyInputLockChanged(const bool locked) {
 }
 
 void ActivityManager::notifyUserInput() {
+  InputWorkPriority::notify(millis());
   if (currentActivity) currentActivity->onUserInput();
 }
 
@@ -1016,6 +1019,10 @@ void ActivityManager::goToReaderAndRunMenuAction(std::string path, const uint8_t
 }
 
 void ActivityManager::goToSleep(bool fromTimeout) {
+  {
+    RenderLock lock;
+    if (currentActivity) currentActivity->saveWakeFrame();
+  }
   const bool canSnapshotOverlay = currentActivity && currentActivity->canSnapshotForSleepOverlay();
   const GfxRenderer::Orientation sleepPopupOrientation = renderer.getOrientation();
   std::string currentBookPath = getCurrentBookPath();

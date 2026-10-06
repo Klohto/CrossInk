@@ -3,6 +3,8 @@ add_executable(SectionPersistenceTest
   EpubProgressPersistenceTest.cpp
   SectionPersistenceLinkStubs.cpp
   ${REPO_ROOT}/lib/Epub/Epub/Section.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/parsers/HtmlEventCache.cpp
+  ${REPO_ROOT}/lib/Epub/Epub/ReaderRaster.cpp
   ${REPO_ROOT}/lib/Epub/Epub/css/CssParser.cpp
 )
 

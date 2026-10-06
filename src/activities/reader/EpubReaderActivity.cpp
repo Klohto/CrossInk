@@ -78,6 +78,8 @@
 #include "util/BookCacheUtils.h"
 #include "util/BookMoveUtils.h"
 #include "util/Dictionary.h"
+#include "util/InputWorkPriority.h"
+#include "util/ReaderWakeFrame.h"
 #include "util/ScreenshotUtil.h"
 
 namespace {
@@ -1582,7 +1584,10 @@ void EpubReaderActivity::onInputLockChanged(const bool locked) {
   }
 }
 
-void EpubReaderActivity::onUserInput() { cancelSilentPrefetchForInput(); }
+void EpubReaderActivity::onUserInput() {
+  rasterCancelRequested.store(true, std::memory_order_relaxed);
+  cancelSilentPrefetchForInput();
+}
 
 bool EpubReaderActivity::handleQuickLockUnlock(const QuickLockTrigger trigger) {
   if (trigger == QuickLockTrigger::LongMenu) {
@@ -2318,6 +2323,15 @@ void EpubReaderActivity::endGlobalSettingsEditForBookReader(void* ctx) {
 }
 
 void EpubReaderActivity::onEnter() {
+  // Early wake has checked the book stamp. Keep its following pages available;
+  // each lookup also checks the current font, layout and display settings.
+  // Other reader entries start a fresh cache after book or font changes.
+  if (epub && !ReaderWakeFrame::wasRestored()) {
+    for (int slot = 0; slot < RASTER_CACHE_SLOTS; ++slot) {
+      const auto path = pageRasterPath(slot);
+      if (Storage.exists(path.c_str())) Storage.remove(path.c_str());
+    }
+  }
   Activity::onEnter();
   pageLoadRetryCount = 0;
   touchReaderDrawerState = initialReaderDrawerState(mappedInput.hasTouchHardware());
@@ -2471,6 +2485,8 @@ void EpubReaderActivity::onEnter() {
 }
 
 void EpubReaderActivity::onExit() {
+  cancelRasterPreparation();
+  rasterCache.close();
   sdFontSystem.setSettingsPersistenceCallback(nullptr, nullptr);
   // Drop the scalable-family catalog retained during reading. The active font
   // and its PSRAM face lifetime remain managed by SdCardFontSystem.
@@ -2730,9 +2746,326 @@ bool EpubReaderActivity::backgroundSectionBuildHasHeap() {
   return false;
 }
 
+ReaderRaster::Key EpubReaderActivity::pageRasterKey(const int page) const {
+  uint32_t signature = activeSectionLayoutSignature;
+  const uint32_t settings[] = {static_cast<uint32_t>(renderer.getOrientation()), SETTINGS.textAntiAliasing,
+                               SETTINGS.screenInverted, SETTINGS.publisherPageNumbers};
+  signature = ReaderRaster::hash(reinterpret_cast<const uint8_t*>(settings), sizeof(settings), signature);
+  signature = ReaderRaster::hash(reinterpret_cast<const uint8_t*>(SETTINGS.sdFontFamilyName),
+                                 strnlen(SETTINGS.sdFontFamilyName, sizeof(SETTINGS.sdFontFamilyName)), signature);
+  const int font = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
+  const bool gray = SETTINGS.textAntiAliasing && ReaderUtils::readerForegroundBlack() &&
+                    !sdFontSystem.fontUsesMonochromeRaster(renderer, font, SETTINGS.sdFontFamilyName);
+  return {1,
+          signature,
+          static_cast<uint32_t>(currentSpineIndex),
+          static_cast<uint32_t>(page),
+          static_cast<uint32_t>(renderer.getDisplayWidthBytes() * 8),
+          static_cast<uint32_t>(renderer.getDisplayHeight()),
+          gray ? 1U : 0U};
+}
+
+std::string EpubReaderActivity::pageRasterPath(const int slot) const {
+  char name[24];
+  snprintf(name, sizeof(name), "/raster_%d.rpg", slot % RASTER_CACHE_SLOTS);
+  return epub->getCachePath() + name;
+}
+
+std::string EpubReaderActivity::findPageRaster(const ReaderRaster::Key& key) {
+  for (int slot = 0; slot < RASTER_CACHE_SLOTS; ++slot) {
+    const auto path = pageRasterPath(slot);
+    if (rasterCache.open(path, key)) {
+      rasterCache.close();
+      rasterSlotUse[slot] = ++rasterUseClock;
+      return path;
+    }
+  }
+  return {};
+}
+
+std::string EpubReaderActivity::nextPageRasterSlot() {
+  const auto victim = std::min_element(rasterSlotUse.begin(), rasterSlotUse.end());
+  const int slot = static_cast<int>(victim - rasterSlotUse.begin());
+  rasterSlotUse[slot] = ++rasterUseClock;
+  return pageRasterPath(slot);
+}
+
+void EpubReaderActivity::cancelRasterPreparation() {
+  rasterCache.cancel();
+  rasterPage.reset();
+  rasterSection.reset();
+  rasterExtraPlanes.reset();
+  rasterRowsPerStep = ReaderRaster::BAND_ROWS;
+  rasterWritePath.clear();
+  rasterRow = 0;
+}
+
+void EpubReaderActivity::saveWakeFrame() {
+  cancelRasterPreparation();
+  if (!epub || !section || activeFootnotePreview || quickActionsPopup.isActive() || !lastRenderCompleteMs ||
+      section->currentPage != lastRenderedPage || currentSpineIndex != lastRenderedSpine ||
+      pageRasterKey(section->currentPage).profile != lastRenderedProfile) {
+    ReaderWakeFrame::discard();
+    return;
+  }
+  const auto key = pageRasterKey(section->currentPage);
+  const auto path = findPageRaster(key);
+  if (!path.empty()) {
+    ReaderWakeFrame::save(renderer, epub->getPath(), path.c_str(), &key,
+                          computeReaderViewportLayout(renderer, false).marginBottom);
+  } else {
+    ReaderWakeFrame::save(renderer, epub->getPath(), nullptr, &key,
+                          computeReaderViewportLayout(renderer, false).marginBottom);
+  }
+}
+
+void EpubReaderActivity::prepareFinishedPages() {
+  if (rasterCancelRequested.exchange(false, std::memory_order_relaxed)) cancelRasterPreparation();
+  if (!section || activeFootnotePreview || automaticPageTurnActive || CLIPPINGS.hasClippings() ||
+      pendingManualPageTurns.hasPending() || !InputWorkPriority::canPrepare(millis()) || sectionBuildWantsTick() ||
+      !renderer.hasFrameBuffer() || !lastRenderCompleteMs ||
+      millis() - lastRenderCompleteMs < IDLE_SD_FONT_PREWARM_DELAY_MS)
+    return;
+  const auto visible = pageRasterKey(section->currentPage);
+  if (lastRenderedPage != section->currentPage || lastRenderedSpine != currentSpineIndex ||
+      lastRenderedProfile != visible.profile)
+    return;
+  if (visible.gray && !renderer.supportsDirectGrayscale()) return;
+  if (rasterVisiblePage != section->currentPage || rasterVisibleSpine != currentSpineIndex ||
+      rasterVisibleProfile != visible.profile) {
+    cancelRasterPreparation();
+    rasterVisiblePage = section->currentPage;
+    rasterVisibleSpine = currentSpineIndex;
+    rasterVisibleProfile = visible.profile;
+    rasterReadyMask = 0;
+  }
+  if (!rasterPage) {
+    int ahead = 0;
+    for (; ahead <= FINISHED_PAGES_AHEAD; ++ahead) {
+      if (!(rasterReadyMask & (1U << ahead))) break;
+    }
+    if (ahead > FINISHED_PAGES_AHEAD) return;
+    rasterPreparingIndex = static_cast<uint8_t>(ahead);
+    int target = section->currentPage + ahead;
+    int targetSpine = currentSpineIndex;
+    Section* source = section.get();
+    if (target >= source->pageCount && (source->isPartial() || source->isBuilding())) return;
+    const int font = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
+    const auto layout = computeReaderViewportLayout(renderer, false);
+    const auto mode = normalizeRenderMode(SETTINGS.epubRenderMode);
+    const auto spec = readerRenderSpecForProfile(
+        font, renderer.getScreenWidth() - layout.marginLeft - layout.marginRight,
+        renderer.getScreenHeight() - layout.marginTop - layout.marginBottom, buildProfileForRenderMode(mode));
+    while (target >= source->pageCount) {
+      target -= source->pageCount;
+      if (++targetSpine >= epub->getSpineItemsCount() ||
+          readerRenderSpecSignature(spec) != activeSectionLayoutSignature)
+        return;
+      rasterSection = makeUniqueNoThrow<Section>(epub, targetSpine, renderer, sectionCacheSuffixForRenderMode(mode));
+      if (!rasterSection || !rasterSection->loadSectionFile(spec)) {
+        rasterSection.reset();
+        rasterReadyMask |= 1U << ahead;
+        return;
+      }
+      source = rasterSection.get();
+      if (target >= source->pageCount && source->isPartial()) {
+        rasterSection.reset();
+        return;
+      }
+    }
+    rasterKey = pageRasterKey(target);
+    rasterKey.spine = static_cast<uint32_t>(targetSpine);
+    if (!findPageRaster(rasterKey).empty()) {
+      rasterReadyMask |= 1U << ahead;
+      return;
+    }
+    const auto heap = MemoryBudget::snapshot();
+    if (!MemoryBudget::hasHeap(heap, IDLE_SD_FONT_PREWARM_MIN_FREE, IDLE_SD_FONT_PREWARM_MIN_MAX_ALLOC) ||
+        !ensureGrayscaleStripScratch())
+      return;
+    rasterPage = source->loadPage(target);
+    if (!rasterPage || rasterPage->hasImages()) {
+      rasterReadyMask |= 1U << ahead;
+      cancelRasterPreparation();
+      return;
+    }
+    if (auto* fonts = renderer.getFontCacheManager()) {
+      auto scope = fonts->createPrewarmScope();
+      rasterPage->renderText(renderer, font, 0, 0);
+      if (!scope.endScanAndPrewarm()) {
+        rasterReadyMask |= 1U << ahead;
+        cancelRasterPreparation();
+        return;
+      }
+    }
+    // Render a larger band when two extra planes fit above the heap floor.
+    // The SD format keeps its small bands, so wake still needs only 7 KiB.
+    if (!rasterKey.gray) {
+      rasterRowsPerStep = EpubGrayscale::GRAYSCALE_STRIP_ROWS;
+    } else {
+      const size_t extraBytes =
+          static_cast<size_t>(renderer.getDisplayWidthBytes()) * EpubGrayscale::GRAYSCALE_STRIP_ROWS * 2;
+      const bool psram = psramHeapAvailable();
+      const auto available = MemoryBudget::snapshot();
+      if (psram || MemoryBudget::hasHeap(available, extraBytes + 60000, extraBytes + 16 * 1024)) {
+        rasterExtraPlanes = psram ? makePsramByteBufferNoThrow(extraBytes) : makeHeapByteBufferNoThrow(extraBytes);
+        if (rasterExtraPlanes) rasterRowsPerStep = EpubGrayscale::GRAYSCALE_STRIP_ROWS;
+      }
+    }
+    rasterWritePath = nextPageRasterSlot();
+    if (!rasterCache.begin(rasterWritePath, rasterKey)) {
+      rasterReadyMask |= 1U << ahead;
+      cancelRasterPreparation();
+      return;
+    }
+  }
+  const auto layout = computeReaderViewportLayout(renderer, /*automaticPageTurnActive=*/false);
+  const int font = activeSectionFontId != 0 ? activeSectionFontId : SETTINGS.getReaderFontId();
+  const int rows = std::min<int>(rasterRowsPerStep, renderer.getDisplayHeight() - rasterRow);
+  const size_t bytes = static_cast<size_t>(renderer.getDisplayWidthBytes()) * rows;
+  const size_t capacity = static_cast<size_t>(renderer.getDisplayWidthBytes()) * rasterRowsPerStep;
+  uint8_t* const bw = grayscaleStripScratch.get();
+  uint8_t* const low = rasterKey.gray ? (rasterExtraPlanes ? rasterExtraPlanes.get() : bw + capacity) : bw;
+  uint8_t* const high = rasterKey.gray ? low + capacity : bw;
+  renderer.setRenderMode(GfxRenderer::BW);
+  renderer.beginStripTarget(bw, rasterRow, rows);
+  renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+  rasterPage->render(renderer, font, layout.marginLeft, layout.marginTop, ReaderUtils::readerForegroundBlack());
+  drawClippingHighlights(*rasterPage, font, layout.marginTop, layout.marginLeft);
+  drawPublisherPageMarkers(renderer, *rasterPage, layout.marginTop, renderer.getScreenHeight() - layout.marginBottom,
+                           ReaderUtils::readerForegroundBlack());
+  renderer.endStripTarget();
+  if (rasterKey.gray) {
+    renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+    renderer.beginDualStripTarget(low, high, rasterRow, rows);
+    renderer.clearScreen(0x00);
+    rasterPage->render(renderer, font, layout.marginLeft, layout.marginTop, true);
+    renderer.endStripTarget();
+    EpubGrayscale::absoluteFromOverlay(bw, low, high, bytes);
+    renderer.setRenderMode(GfxRenderer::BW);
+  }
+  bool saved = !rasterCancelRequested.load(std::memory_order_relaxed);
+  for (int offset = 0; saved && offset < rows; offset += ReaderRaster::BAND_ROWS) {
+    const int count = std::min<int>(ReaderRaster::BAND_ROWS, rows - offset);
+    const size_t start = static_cast<size_t>(renderer.getDisplayWidthBytes()) * offset;
+    saved = !rasterCancelRequested.load(std::memory_order_relaxed) &&
+            rasterCache.append(bw + start, rasterKey.gray ? low + start : bw + start,
+                               rasterKey.gray ? high + start : bw + start, count);
+  }
+  if (!saved) {
+    cancelRasterPreparation();
+    return;
+  }
+  rasterRow += rows;
+  if (rasterRow == renderer.getDisplayHeight()) {
+    const bool committed = rasterCache.commit();
+    LOG_DBG("RPG", "Finished page: spine=%u page=%u saved=%u", rasterKey.spine, rasterKey.page, committed);
+    rasterReadyMask |= 1U << rasterPreparingIndex;
+    if (committed && rasterKey.spine == static_cast<uint32_t>(currentSpineIndex) &&
+        rasterKey.page == static_cast<uint32_t>(section->currentPage)) {
+      ReaderWakeFrame::save(renderer, epub->getPath(), rasterWritePath.c_str(), &rasterKey, layout.marginBottom);
+    }
+    cancelRasterPreparation();
+  }
+}
+
+bool EpubReaderActivity::renderFinishedPage() {
+  if (!section || activeFootnotePreview || automaticPageTurnActive || CLIPPINGS.hasClippings() ||
+      pendingBookmarkFeedback || pendingCompletedFeedback || pendingTiltPageTurnFeedback || pendingSafeModeToast ||
+      pendingRenderModeToast || !ensureGrayscaleStripScratch())
+    return false;
+  const auto key = pageRasterKey(section->currentPage);
+  if (key.gray && !renderer.supportsDirectGrayscale()) return false;
+  const auto path = findPageRaster(key);
+  if (path.empty() || !rasterCache.open(path, key)) return false;
+  const size_t capacity = static_cast<size_t>(renderer.getDisplayWidthBytes()) * ReaderRaster::BAND_ROWS;
+  uint8_t* const bw = grayscaleStripScratch.get();
+  uint8_t* const low = bw + capacity;
+  uint8_t* const high = low + capacity;
+  int y = 0;
+  while (!rasterCache.atEnd()) {
+    uint16_t rows;
+    if (!rasterCache.readBand(bw, low, high, rows)) {
+      rasterCache.close();
+      renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+      LOG_ERR("RPG", "Invalid finished page; using page model");
+      return false;
+    }
+    const size_t bytes = static_cast<size_t>(renderer.getDisplayWidthBytes()) * rows;
+    memcpy(renderer.getFrameBuffer() + static_cast<size_t>(y) * renderer.getDisplayWidthBytes(), bw, bytes);
+    y += rows;
+  }
+  // Status is composed at use time so battery, clock and page estimates stay current.
+  if (auto* fonts = renderer.getFontCacheManager()) {
+    auto scope = fonts->createPrewarmScope();
+    renderStatusBar();
+    if (!scope.endScanAndPrewarm()) {
+      rasterCache.close();
+      renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+      return false;
+    }
+  }
+  renderStatusBar();
+  if (ReaderWakeFrame::consumeIfSame(renderer.getFrameBuffer(), renderer.getBufferSize(), key.gray != 0, &key)) {
+    rasterCache.close();
+    return true;
+  }
+  if (!key.gray) {
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    rasterCache.close();
+    LOG_DBG("RPG", "Displayed finished BW page: spine=%u page=%u", key.spine, key.page);
+    return true;
+  }
+  if (!rasterCache.rewind()) {
+    rasterCache.close();
+    renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+    return false;
+  }
+  if (pagesUntilFullRefresh <= 1) {
+    renderer.displayBuffer(pagesUntilFullRefresh < 0 ? manualScreenRefreshMode() : HalDisplay::HALF_REFRESH);
+    pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+  } else {
+    pagesUntilFullRefresh--;
+  }
+  if (!renderer.beginDirectGrayscaleOverlay()) {
+    rasterCache.close();
+    renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+    return false;
+  }
+  y = 0;
+  while (!rasterCache.atEnd()) {
+    uint16_t rows;
+    if (!rasterCache.readBand(bw, low, high, rows)) {
+      rasterCache.close();
+      renderer.cleanupGrayscaleWithFrameBuffer();
+      renderer.clearScreen(ReaderUtils::readerBackgroundColor());
+      return false;
+    }
+    const size_t bytes = static_cast<size_t>(renderer.getDisplayWidthBytes()) * rows;
+    const uint8_t* base = renderer.getFrameBuffer() + static_cast<size_t>(y) * renderer.getDisplayWidthBytes();
+    for (size_t i = 0; i < bytes; ++i) {
+      const uint8_t changed = bw[i] ^ base[i];
+      low[i] = (low[i] & static_cast<uint8_t>(~changed)) | (base[i] & changed);
+      high[i] = (high[i] & static_cast<uint8_t>(~changed)) | (base[i] & changed);
+    }
+    renderer.writeGrayscalePlaneStrip(true, low, y, rows);
+    renderer.writeGrayscalePlaneStrip(false, high, y, rows);
+    y += rows;
+  }
+  rasterCache.close();
+  renderer.displayGrayBuffer();
+  renderer.cleanupGrayscaleWithFrameBuffer();
+  LOG_DBG("RPG", "Displayed finished gray page: spine=%u page=%u", key.spine, key.page);
+  return true;
+}
+
 void EpubReaderActivity::idlePrewarmNextPage() {
   RenderLock lock(*this, RenderLock::Mode::Try);
   if (!lock.ownsLock()) return;
+
+  prepareFinishedPages();
+
+  if (!InputWorkPriority::canPrepare(millis())) return;
 
   if (!section || section->isBuilding() || activeFootnotePreview || automaticPageTurnActive ||
       !renderer.hasFrameBuffer() || lastRenderCompleteMs == 0 ||
@@ -2884,8 +3217,9 @@ void EpubReaderActivity::loop() {
   // rebuild is all cost (whole-chapter re-layout from page 0) and no benefit this session.
   {
     RenderLock lock(*this, RenderLock::Mode::Try);
-    if (lock.ownsLock() && !backgroundBuildYieldForInput.load(std::memory_order_relaxed) && section &&
-        !section->isBuilding() && section->isPartial() && buildViewportWidth > 0 && !partialRebuildStartFailed &&
+    if (lock.ownsLock() && InputWorkPriority::canPrepare(millis()) &&
+        !backgroundBuildYieldForInput.load(std::memory_order_relaxed) && section && !section->isBuilding() &&
+        section->isPartial() && buildViewportWidth > 0 && !partialRebuildStartFailed &&
         !partialRebuildAbortedForLowMemory &&
         section->currentPage + PARTIAL_REBUILD_START_MARGIN >= static_cast<int>(section->pageCount)) {
       releaseGrayscaleStripScratch();
@@ -2919,7 +3253,8 @@ void EpubReaderActivity::loop() {
   // skipLoopDelay(), so the loop only runs hot while a tick can actually happen.
   {
     RenderLock lock(*this, RenderLock::Mode::Try);
-    if (lock.ownsLock() && !backgroundBuildYieldForInput.load(std::memory_order_relaxed) && sectionBuildWantsTick() &&
+    if (lock.ownsLock() && InputWorkPriority::canPrepare(millis()) &&
+        !backgroundBuildYieldForInput.load(std::memory_order_relaxed) && sectionBuildWantsTick() &&
         (section->isPartial() || section->activeBuildHasCaughtReadablePages())) {
       releaseGrayscaleStripScratch();
       if (backgroundSectionBuildHasHeap()) {
@@ -6110,7 +6445,10 @@ void EpubReaderActivity::render(RenderLock&& lock) {
             ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     const int readerFontId = SETTINGS.getReaderFontId();
     const EpubRenderMode selectedRenderMode = normalizeRenderMode(SETTINGS.epubRenderMode);
-    const bool fullSectionIndexing = SETTINGS.indexingMethod == CrossPointSettings::INDEXING_FULL_SECTION;
+    // X3 opens the requested page first and prepares a bounded window after it
+    // is visible. Explicit jumps below retain their full-build requirements.
+    const bool fullSectionIndexing =
+        SETTINGS.indexingMethod == CrossPointSettings::INDEXING_FULL_SECTION && !gpio.deviceIsX3();
     EpubRenderMode usedRenderMode = selectedRenderMode;
     const bool buildingFootnotePreview = !pendingFootnotePreviewAnchor.empty();
     bool loadedSection = false;
@@ -6745,6 +7083,11 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       return;
     }
     lastRenderCompleteMs = millis();
+    if (!activeFootnotePreview && section) {
+      lastRenderedPage = section->currentPage;
+      lastRenderedSpine = currentSpineIndex;
+      lastRenderedProfile = pageRasterKey(section->currentPage).profile;
+    }
     const uint8_t heapShapeRedrawStages = pendingHeapShapeReaderRedrawStages.exchange(0, std::memory_order_relaxed);
     if (heapShapeRedrawStages & HEAP_SHAPE_REDRAW_CLIP) {
       MemoryBudget::logHeapShape("clip.reader_redrawn");
@@ -6784,9 +7127,8 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
     return;
   }
 
-  // Start on the penultimate page, including one-page chapters, and catch up
-  // after a direct jump to the last page.
-  const int triggerPage = section->pageCount > 1 ? section->pageCount - 2 : 0;
+  // Prepare the next chapter before it enters the four-page raster window.
+  const int triggerPage = std::max<int>(0, section->pageCount - FINISHED_PAGES_AHEAD - 1);
   if (section->currentPage < triggerPage) {
     return;
   }
@@ -6811,7 +7153,7 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
 
   if (nextSection->loadSectionFile(readerRenderSpecForProfile(readerFontId, viewportWidth, viewportHeight,
                                                               buildProfileForRenderMode(selectedRenderMode))) &&
-      !nextSection->isPartial()) {
+      (!nextSection->isPartial() || (gpio.deviceIsX3() && nextSection->pageCount >= BUILD_WINDOW_AHEAD))) {
     preparedNextSpineIndex = nextSpineIndex;
     preparedNextViewportWidth = viewportWidth;
     preparedNextViewportHeight = viewportHeight;
@@ -6869,9 +7211,27 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
     // preparing the next chapter. Without this, a large EPUB entry makes the
     // inflater take its workspace from the same constrained heap as layout.
     GfxRenderer::FrameBufferLoan loan(renderer);
-    const bool succeeded = attemptSection->createSectionFile(
-        readerRenderSpecForProfile(readerFontId, viewportWidth, viewportHeight, profile), nullptr, nullptr,
-        &attemptAbortedForLowMemory, buildOptions);
+    const auto spec = readerRenderSpecForProfile(readerFontId, viewportWidth, viewportHeight, profile);
+    bool succeeded;
+    if (gpio.deviceIsX3()) {
+      succeeded = attemptSection->startBuild(spec, buildOptions);
+      while (succeeded && attemptSection->isBuilding() && attemptSection->pageCount < BUILD_WINDOW_AHEAD) {
+        if (silentPrefetchCancelRequested.load(std::memory_order_relaxed)) {
+          attemptCancelled = true;
+          attemptSection->abandonBuild();
+          succeeded = false;
+          break;
+        }
+        succeeded = attemptSection->buildSomeMore(BACKGROUND_BUILD_PAGES_PER_TICK);
+      }
+      attemptAbortedForLowMemory = attemptSection->lastBuildLayoutAbortedForLowMemory();
+      if (succeeded && attemptSection->isBuilding()) {
+        attemptSection->suspendBuild();
+        succeeded = attemptSection->pageCount > 0;
+      }
+    } else {
+      succeeded = attemptSection->createSectionFile(spec, nullptr, nullptr, &attemptAbortedForLowMemory, buildOptions);
+    }
     if (attemptCancelled) {
       prefetchCancelled = true;
       LOG_DBG("ERS", "Silent next-chapter indexing cancelled: chapter=%d", nextSpineIndex);
@@ -7183,6 +7543,7 @@ bool EpubReaderActivity::ensureGrayscaleStripScratch() {
 }
 
 void EpubReaderActivity::releaseGrayscaleStripScratch(const bool force) {
+  cancelRasterPreparation();
   // Indexing needs internal DRAM headroom. A PSRAM-backed strip does not consume
   // that pool, so retain it for the activity lifetime and avoid external churn.
   if (!force && grayscaleStripScratch && grayscaleStripScratchInPsram) return;
@@ -7243,6 +7604,8 @@ void EpubReaderActivity::prepareCurrentSectionForRelayout() {
 bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fontId, const int orientedMarginTop,
                                         const int orientedMarginRight, const int orientedMarginBottom,
                                         const int orientedMarginLeft, const bool updatePanel) {
+  cancelRasterPreparation();
+  if (updatePanel && !page->hasImages() && renderFinishedPage()) return true;
 #if CROSSINK_APP_CAP_TOUCH
   if (mappedInput.hasTouchHardware()) {
     if (!touchReaderPreviewAllocationAttempted) {
@@ -7406,6 +7769,20 @@ bool EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int fo
     return true;
   }
   const bool needsAnyGrayscale = needsTextGrayscale || needsImageGrayscale;
+  const auto wakeKey = pageRasterKey(section->currentPage);
+  if (!pageHasImages && ReaderWakeFrame::consumeIfSame(renderer.getFrameBuffer(), renderer.getBufferSize(),
+                                                       needsAnyGrayscale, &wakeKey)) {
+    LOG_DBG("RKW", "Reader page matches early wake frame; keeping visible pixels");
+    return true;
+  }
+  if (needsTextGrayscale && !pageHasImages && pagesUntilFullRefresh > 1) {
+    ensureGrayscaleStripScratch();
+    if (EpubGrayscale::runDirectTextPass(renderer, *page, fontId, orientedMarginLeft, orientedMarginTop,
+                                         foregroundBlack, grayscaleStripScratch.get(), grayscaleStripScratchSize)) {
+      pagesUntilFullRefresh--;
+      return true;
+    }
+  }
   const bool tiledGrayscale = needsAnyGrayscale && renderer.supportsStripGrayscale();
   const bool overlapRefresh =
       tiledGrayscale && !pageHasImages && pagesUntilFullRefresh > 1 && renderer.supportsAsyncGrayscaleBase();

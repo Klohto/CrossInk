@@ -40,6 +40,7 @@
 #include "components/themes/lyra/LyraCarouselTheme.h"
 #include "components/themes/minimal/MinimalTheme.h"
 #include "fontIds.h"
+#include "util/InputWorkPriority.h"
 
 namespace {
 constexpr uint32_t CAROUSEL_CACHE_MAGIC = 0x43434152;  // "CCAR"
@@ -571,10 +572,16 @@ void HomeActivity::loadRecentBooks(int maxBooks) {
 }
 
 void HomeActivity::loadCoverGridThumbnails() {
+  if (!InputWorkPriority::canPrepare(millis())) {
+    recentsLoading = false;
+    return;
+  }
+  InputWorkPriority::Ticket ticket;
   recentsLoading = true;
   bool showingLoading = false;
   Rect popupRect;
   for (size_t i = 0; i < recentBooks.size(); ++i) {
+    if (ticket.interrupted()) break;
     auto& book = recentBooks[i];
     if (book.coverState == RecentBook::CoverState::Missing || !Storage.exists(book.path.c_str())) continue;
     const int width = coverGridUi->thumbWidthFor(i);
@@ -622,7 +629,7 @@ void HomeActivity::loadCoverGridThumbnails() {
       if (xtc->load()) xtc->generateThumbBmp(static_cast<uint16_t>(width), static_cast<uint16_t>(height));
     }
   }
-  recentsLoaded = true;
+  recentsLoaded = !ticket.interrupted();
   recentsLoading = false;
 }
 
@@ -638,6 +645,11 @@ void HomeActivity::loadAllBookStats() {
 }
 
 void HomeActivity::loadRecentCovers(int coverHeight) {
+  if (!InputWorkPriority::canPrepare(millis())) {
+    recentsLoading = false;
+    return;
+  }
+  InputWorkPriority::Ticket ticket;
   // Thumbnail generation may need a 32 KB contiguous inflate buffer. The Home
   // cover snapshot is only a redraw cache, so release it before ZIP work.
   if (coverBuffer) {
@@ -668,6 +680,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
   int progress = 0;
   for (size_t bookIdx = 0; bookIdx < recentBooks.size(); ++bookIdx) {
+    if (ticket.interrupted()) break;
     RecentBook& book = recentBooks[bookIdx];
     if (!Storage.exists(book.path.c_str())) {
       progress++;
@@ -686,6 +699,10 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
         const bool sideMissing = !Storage.exists(sidePath.c_str());
 
         if (centerMissing || sideMissing) {
+          // Artwork can be rebuilt after preparation. Release its 52 KiB
+          // snapshot before ZIP and thumbnail buffers need contiguous space.
+          freeCarouselFrames();
+          gCarouselCache.invalidate();
           if (FsHelpers::hasEpubExtension(book.path)) {
             Epub epub(book.path, "/.crosspoint");
             showLoadingProgress(10 + progress * progressIncrement);
@@ -701,7 +718,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
               success = epub.generateThumbBmp(LyraCarouselTheme::kCenterThumbW, LyraCarouselTheme::kCenterThumbH,
                                               &renderer, SETTINGS.getReaderFontId()) &&
                         success;
-            if (sideMissing)
+            if (sideMissing && !ticket.interrupted())
               success = epub.generateThumbBmp(LyraCarouselTheme::kSideCoverW, LyraCarouselTheme::kSideCoverH, &renderer,
                                               SETTINGS.getReaderFontId()) &&
                         success;
@@ -795,7 +812,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
     progress++;
   }
 
-  recentsLoaded = true;
+  recentsLoaded = !ticket.interrupted();
   recentsLoading = false;
 
   if (isCarouselTheme && std::any_of(bookUpdated.begin(), bookUpdated.end(), [](char updated) { return updated; })) {
@@ -804,7 +821,11 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
     invalidateCarouselDiskCache();
     freeCarouselFrames();
     gCarouselCache.invalidate();
-    preRenderCarouselFrames();
+    if (ticket.interrupted()) {
+      carouselWarmupPending = true;
+    } else {
+      preRenderCarouselFrames();
+    }
     requestUpdate();
   }
 }
@@ -843,6 +864,7 @@ void HomeActivity::onEnter() {
                   : std::min(kMaxCachedBooks, std::max(metrics.homeRecentBooksCount, HOME_BOOK_SWAP_RECENT_COUNT));
   RECENT_BOOKS.ensureLoaded();
   loadRecentBooks(recentBooksToLoad);
+  recentsLoaded = recentBooks.empty();
   gridHasContinueReading = !recentBooks.empty();
 
   const auto selectInitialBook = [this, &metrics](const std::string& path) {
@@ -1200,6 +1222,7 @@ void HomeActivity::renderCarouselFrameToCurrentBuffer(int bookIdx) {
 }
 
 bool HomeActivity::saveCarouselFrameToDisk(uint64_t cacheKeyHash, int bookCount, int bookIdx, int slotIdx) {
+  if (!InputWorkPriority::canPrepare(millis())) return false;
   if (slotIdx < 0 || slotIdx >= kCarouselFrameCount || !carouselFrames[slotIdx] || bookIdx < 0 ||
       bookIdx >= bookCount) {
     return false;
@@ -1366,6 +1389,13 @@ void HomeActivity::preRenderCarouselFrames() {
 }
 
 void HomeActivity::loop() {
+  {
+    RenderLock lock(RenderLock::Mode::Try);
+    if (lock.ownsLock() && ((!recentsLoaded && !recentsLoading) || (carouselWarmupPending && !carouselFramesReady)) &&
+        InputWorkPriority::canPrepare(millis())) {
+      requestUpdate();
+    }
+  }
   if (quickActionsLongPowerHandled) {
     if (!mappedInput.isPressed(MappedInputManager::Button::Power)) {
       quickActionsLongPowerHandled = false;
@@ -1884,13 +1914,21 @@ void HomeActivity::loop() {
     }
 
     if (!carouselTouchOnly) {
-      if (!handledHorizontalNav && mappedInput.wasPressed(MappedInputManager::Button::Right)) {
+      const auto arrowAction =
+          carouselArrowGesture.update(mappedInput.wasPressed(MappedInputManager::Button::Left),
+                                      mappedInput.wasPressed(MappedInputManager::Button::Right),
+                                      mappedInput.isPressed(MappedInputManager::Button::Left),
+                                      mappedInput.isPressed(MappedInputManager::Button::Right),
+                                      mappedInput.wasReleased(MappedInputManager::Button::Left),
+                                      mappedInput.wasReleased(MappedInputManager::Button::Right), millis());
+      if (!handledHorizontalNav && arrowAction == CarouselArrowGesture::Action::Right) {
         moveRight();
       }
-      if (!handledHorizontalNav && mappedInput.wasPressed(MappedInputManager::Button::Left)) {
+      if (!handledHorizontalNav && arrowAction == CarouselArrowGesture::Action::Left) {
         moveLeft();
       }
-      if (mappedInput.wasPressed(MappedInputManager::Button::Down)) {
+      if (mappedInput.wasPressed(MappedInputManager::Button::Down) ||
+          arrowAction == CarouselArrowGesture::Action::ToggleRows) {
         if (inCarouselRow) {
           lastCarouselBookIndex = selectorIndex;
           selectorIndex = bookCount;
@@ -2245,7 +2283,7 @@ void HomeActivity::render(RenderLock&&) {
     loadRecentCovers(metrics.homeCoverHeight);
   }
 
-  if (carouselWarmupPending && !carouselFramesReady) {
+  if (carouselWarmupPending && !carouselFramesReady && InputWorkPriority::canPrepare(millis())) {
     // Resolve any missing cover thumbs first, then warm the carousel snapshot.
     // Cover generation needs more contiguous heap than the frame cache path.
     carouselWarmupPending = false;

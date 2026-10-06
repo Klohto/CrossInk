@@ -11,6 +11,42 @@
 
 namespace EpubGrayscale {
 
+bool runDirectTextPass(GfxRenderer& renderer, const Page& page, const int fontId, const int marginLeft,
+                       const int marginTop, const bool foregroundBlack, uint8_t* scratch, const size_t scratchSize) {
+  if (page.hasImages() || !foregroundBlack || !renderer.supportsStripGrayscale() || !renderer.supportsDirectGrayscale())
+    return false;
+  const size_t bandBytes = static_cast<size_t>(renderer.getDisplayWidthBytes()) * GRAYSCALE_STRIP_ROWS;
+  if (!scratch || scratchSize < bandBytes) return false;
+  // One reusable band is owned by the reader. This second transient band is at
+  // most 8 KiB on X3 and keeps the live framebuffer intact during composition.
+  constexpr size_t FREE_RESERVE = 60000;
+  constexpr size_t CONTIGUOUS_RESERVE = 16 * 1024;
+  const bool psram = psramHeapAvailable();
+  if (!psram &&
+      (ESP.getFreeHeap() < bandBytes + FREE_RESERVE || ESP.getMaxAllocHeap() < bandBytes + CONTIGUOUS_RESERVE))
+    return false;
+  auto high = psram ? makePsramByteBufferNoThrow(bandBytes) : makeHeapByteBufferNoThrow(bandBytes);
+  if (!high) return false;
+  if (!renderer.beginDirectGrayscaleOverlay()) return false;
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+  const int stride = renderer.getDisplayWidthBytes();
+  for (int y = 0; y < renderer.getDisplayHeight(); y += GRAYSCALE_STRIP_ROWS) {
+    const int rows = std::min(GRAYSCALE_STRIP_ROWS, renderer.getDisplayHeight() - y);
+    renderer.beginDualStripTarget(scratch, high.get(), y, rows);
+    renderer.clearScreen(0x00);
+    page.render(renderer, fontId, marginLeft, marginTop, foregroundBlack);
+    renderer.endStripTarget();
+    absoluteFromOverlay(renderer.getFrameBuffer() + static_cast<size_t>(y) * stride, scratch, high.get(),
+                        static_cast<size_t>(rows) * stride);
+    renderer.writeGrayscalePlaneStrip(true, scratch, y, rows);
+    renderer.writeGrayscalePlaneStrip(false, high.get(), y, rows);
+  }
+  renderer.setRenderMode(GfxRenderer::BW);
+  renderer.displayGrayBuffer();
+  renderer.cleanupGrayscaleWithFrameBuffer();
+  return true;
+}
+
 bool runTiledGrayscalePass(GfxRenderer& renderer, const Page& page, const int fontId, const int marginLeft,
                            const int marginTop, const bool foregroundBlack, const bool needsTextGrayscale,
                            const bool needsImageGrayscale, uint8_t* scratch, const size_t scratchSize,
@@ -103,12 +139,13 @@ bool runTiledGrayscalePass(GfxRenderer& renderer, const Page& page, const int fo
   // Text pages can produce both overlay masks during the same traversal. This
   // reuses glyph lookup and shaping, with one additional 80-row scratch buffer.
   // Retain the single-strip path when memory is low or the page has images.
-  const bool dualFits = needsTextGrayscale && !page.hasImages() &&
-                       (usePsramPlanes || ESP.getFreeHeap() >= requiredScratchSize + PLANE_BUFFER_FREE_HEAP_RESERVE) &&
-                       (usePsramPlanes || ESP.getMaxAllocHeap() >= requiredScratchSize + PLANE_BUFFER_MAX_ALLOC_RESERVE);
+  const bool dualFits =
+      needsTextGrayscale && !page.hasImages() &&
+      (usePsramPlanes || ESP.getFreeHeap() >= requiredScratchSize + PLANE_BUFFER_FREE_HEAP_RESERVE) &&
+      (usePsramPlanes || ESP.getMaxAllocHeap() >= requiredScratchSize + PLANE_BUFFER_MAX_ALLOC_RESERVE);
   auto msbStrip = dualFits ? (usePsramPlanes ? makePsramByteBufferNoThrow(requiredScratchSize)
-                                           : makeHeapByteBufferNoThrow(requiredScratchSize))
-                          : HeapByteBuffer{};
+                                             : makeHeapByteBufferNoThrow(requiredScratchSize))
+                           : HeapByteBuffer{};
   if (msbStrip) {
     renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
     for (int y = 0; y < displayHeight; y += GRAYSCALE_STRIP_ROWS) {

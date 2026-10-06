@@ -16,9 +16,9 @@
 #include <cmath>
 
 #include "BitmapRow.h"
-#include "MonoBitmap.h"
 #include "FontCacheManager.h"
 #include "GlyphBitmap.h"
+#include "MonoBitmap.h"
 
 namespace {
 
@@ -813,17 +813,14 @@ static void renderCharSmallCaps(const GfxRenderer& renderer, GfxRenderer::Render
             if (renderMode != GfxRenderer::BW) {
               // A source pixel is three units wide; a destination pixel spans
               // four. Use the overlap area instead of the darkest sample.
-              const int weightX = std::min((sampleX + 1) * 3, (dstX + 1) * 4) -
-                                  std::max(sampleX * 3, dstX * 4);
-              const int weightY = std::min((sampleY + 1) * 3, (dstY + 1) * 4) -
-                                  std::max(sampleY * 3, dstY * 4);
+              const int weightX = std::min((sampleX + 1) * 3, (dstX + 1) * 4) - std::max(sampleX * 3, dstX * 4);
+              const int weightY = std::min((sampleY + 1) * 3, (dstY + 1) * 4) - std::max(sampleY * 3, dstY * 4);
               weightedCoverage += raw * weightX * weightY;
             }
           }
         }
-        const uint8_t raw = renderMode == GfxRenderer::BW || maxRaw == 0
-                                ? maxRaw
-                                : std::max<unsigned>(1, (weightedCoverage + 8) / 16);
+        const uint8_t raw =
+            renderMode == GfxRenderer::BW || maxRaw == 0 ? maxRaw : std::max<unsigned>(1, (weightedCoverage + 8) / 16);
         draw2BitFontPixel(renderer, renderMode, baseX + dstX, baseY + dstY, raw, pixelState);
       }
     }
@@ -3429,6 +3426,12 @@ bool GfxRenderer::displayDirectGrayscaleBase(HalDisplay::RefreshMode fallback) c
   absoluteGrayPlanes = true;
   return true;
 #endif
+}
+
+bool GfxRenderer::beginDirectGrayscaleOverlay() const {
+  if (!displayDirectGrayscaleBase()) return false;
+  absoluteGrayPlanes = false;
+  return true;
 }
 
 void GfxRenderer::setRenderMode(RenderMode mode) {

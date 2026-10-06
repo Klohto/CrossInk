@@ -1,5 +1,5 @@
-#include <Epub/Page.h>
 #include <ArenaVector.h>
+#include <Epub/Page.h>
 #include <GfxRenderer.h>
 #include <gtest/gtest.h>
 
@@ -812,5 +812,89 @@ TEST(CssFontSizeTest, StrictValuesAndCascade) {
   const auto style = CssParser::parseInlineStyle("font-size: 150%; font-size: nonsense");
   EXPECT_TRUE(style.hasFontSize());
   EXPECT_FLOAT_EQ(style.fontSize.value, 150);
+}
+}  // namespace
+
+namespace {
+struct PreparedLayout {
+  std::vector<int> cells;
+  std::vector<std::pair<std::string, uint16_t>> anchors;
+  uint32_t visible = 0;
+  bool replayed = false;
+};
+PreparedLayout layoutMiddleChapter(int width) {
+  PreparedLayout result;
+  Epub epub;
+  GfxRenderer renderer;
+  renderer.textAdvancePerChar = 2;
+  renderer.boldAdvancePerChar = 1;
+  std::string path = "middle.xhtml";
+  ChapterHtmlSlimParser parser{
+      epub,
+      path,
+      renderer,
+      0,
+      1.0f,
+      false,
+      false,
+      0,
+      static_cast<uint16_t>(width),
+      120,
+      false,
+      false,
+      false,
+      0,
+      [&](std::unique_ptr<Page> page, uint16_t index, uint16_t lines, uint32_t visible, uint32_t reference) {
+        result.cells.insert(result.cells.end(), {index, lines, static_cast<int>(visible), static_cast<int>(reference)});
+        for (const auto& element : page->elements) {
+          result.cells.insert(result.cells.end(), {element->getTag(), element->xPos, element->yPos});
+          if (element->getTag() == TAG_PageLine) {
+            const auto& block = static_cast<PageLine*>(element.get())->getBlock();
+            result.cells.push_back(block->wordCount());
+            result.cells.push_back(static_cast<int>(block->getBlockStyle().alignment));
+            for (uint16_t word = 0; word < block->wordCount(); ++word) result.cells.push_back(block->wordXpos(word));
+          }
+        }
+        result.cells.push_back(-1000);
+      },
+      true,
+      "",
+      ""};
+  EXPECT_TRUE(parser.beginParse());
+  result.replayed = parser.eventCache_ && parser.eventCache_->replaying();
+  size_t steps = 0;
+  auto status = ChapterHtmlSlimParser::ParseStatus::More;
+  while (status == ChapterHtmlSlimParser::ParseStatus::More && steps++ < 1000) status = parser.parseStep();
+  EXPECT_EQ(status, ChapterHtmlSlimParser::ParseStatus::Done);
+  EXPECT_TRUE(parser.finishParse());
+  result.visible = parser.getVisibleTextLength();
+  result.anchors = parser.getAnchors();
+  return result;
+}
+TEST(ChapterMiddleFormat, ReflowsTheSameContentAtNewWidthAndRebuildsAfterDamage) {
+  Storage.reset();
+  std::string html = "<html><body><h1 id='chapter'>Chapter &amp; title</h1>";
+  for (int n = 0; n < 35; ++n)
+    html +=
+        "<p style='text-align:left'>First <b>bold</b> and <i>italic</i> words. <a href='#note'>1</a>"
+        "<ruby>base<rt>reading</rt></ruby> text &#233; next sentence with more words.</p>";
+  html += "<p id='note'>End</p></body></html>";
+  Storage.put("middle.xhtml", {html.begin(), html.end()});
+  const auto initial = layoutMiddleChapter(200);
+  EXPECT_FALSE(initial.replayed);
+  ASSERT_TRUE(Storage.exists("middle.xhtml.mid"));
+  const auto narrow = layoutMiddleChapter(80);
+  EXPECT_TRUE(narrow.replayed);
+  EXPECT_NE(initial.cells, narrow.cells);
+  const auto original = Storage.bytes("middle.xhtml.mid");
+  auto corrupt = original;
+  corrupt[corrupt.size() / 2] ^= 1;
+  Storage.put("middle.xhtml.mid", corrupt);
+  const auto rebuilt = layoutMiddleChapter(80);
+  EXPECT_FALSE(rebuilt.replayed);
+  EXPECT_EQ(narrow.cells, rebuilt.cells);
+  EXPECT_EQ(narrow.anchors, rebuilt.anchors);
+  EXPECT_EQ(narrow.visible, rebuilt.visible);
+  EXPECT_EQ(Storage.bytes("middle.xhtml.mid"), original);
 }
 }  // namespace

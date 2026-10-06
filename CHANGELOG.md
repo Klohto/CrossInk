@@ -1,5 +1,26 @@
 ## [Unreleased]
 
+## [1.6.1-2.0] - 2026-10-06
+
+### Added
+
+- Restore the saved X3 reading page before loading fonts and EPUB metadata. Keep its footer until the next page turn when the index estimate changes during wake.
+- Keep the current text page and four following pages as completed pixels on SD. The eight-slot cache rolls across prepared chapter boundaries.
+- Save completed EPUB parser events in a format that can be reused after font or layout changes.
+- Hold Left or Right for 600 ms on the Carousel Home screen to switch between books and the menu. A short press moves within the selected row. Returning to books keeps the selected book.
+
+### Changed
+
+- Open the requested X3 EPUB page first. Prepare up to twelve layout pages ahead in small steps, then persist the readable prefix on sleep or exit. The page count stays estimated while the chapter is incomplete.
+- Draw supported X3 antialiased text pages with one grayscale panel activation. Periodic strong refreshes retain their existing schedule.
+- Pause optional chapter, page and cover preparation after input. Resume after 250 ms without input, with cancellation checks between work units.
+- Release Carousel snapshots before missing covers need ZIP and thumbnail buffers.
+
+## [1.6.1-1.0] - 2026-10-06
+
+The accepted v16 source is also published as 1.6.1-1.0. The x3-perf-v16 release keeps its original files.
+
+
 ### Changed
 
 - Read ASCII text-direction classes from a constant table during layout and drawing. Use a shift for range midpoints.

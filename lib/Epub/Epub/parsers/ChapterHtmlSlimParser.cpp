@@ -1815,6 +1815,27 @@ bool ChapterHtmlSlimParser::appendMalformedMarkupWarningPage() {
   return true;
 }
 
+void XMLCALL ChapterHtmlSlimParser::recordStartElement(void* userData, const XML_Char* name, const XML_Char** atts) {
+  auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
+  if (self->eventCache_) self->eventCache_->recordStart(name, atts);
+  startElement(userData, name, atts);
+}
+void XMLCALL ChapterHtmlSlimParser::recordEndElement(void* userData, const XML_Char* name) {
+  auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
+  if (self->eventCache_) self->eventCache_->recordEnd(name);
+  endElement(userData, name);
+}
+void XMLCALL ChapterHtmlSlimParser::recordCharacterData(void* userData, const XML_Char* text, const int len) {
+  auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
+  if (self->eventCache_) self->eventCache_->recordText(text, len);
+  characterData(userData, text, len);
+}
+void XMLCALL ChapterHtmlSlimParser::recordDefaultHandler(void* userData, const XML_Char* text, const int len) {
+  auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
+  if (self->eventCache_) self->eventCache_->recordEntity(text, len);
+  defaultHandlerExpand(userData, text, len);
+}
+
 void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
   if (self->isScanningForPreviewAnchor()) {
@@ -3904,46 +3925,52 @@ bool ChapterHtmlSlimParser::beginParse() {
     ancestorStack_.reserve(32);
   }
 
+  if (!Storage.openFileForRead("EHP", filepath, parseFile_)) {
+    abortParse();
+    return false;
+  }
+  parseFileSize_ = parseFile_.size();
+  const uint32_t sourceModified = parseFile_.modificationTime();
+  if (popupFn && parseFileSize_ >= MIN_SIZE_FOR_POPUP) popupFn();
+  parseStartTime_ = millis();
+  prewarmSectionAdvanceTable(parseFile_);
+
+  // The bounded middle format replaces Expat on reflow. Optional buffers leave
+  // the text-layout floor available and are released with this parser.
+  if (!isPreviewBuild() && ESP.getFreeHeap() >= 60000 + 8 * 1024 && ESP.getMaxAllocHeap() >= 12 * 1024) {
+    eventCache_ = makeUniqueNoThrow<HtmlEventCache>();
+    if (eventCache_ && !eventCache_->begin(filepath, parseFileSize_, sourceModified, ESP.getFreeHeap() >= 80000))
+      eventCache_.reset();
+    if (eventCache_ && eventCache_->replaying()) {
+      parseFile_.close();
+      return true;
+    }
+  }
   activeParser = XML_ParserCreate(nullptr);
   if (!activeParser) {
     LOG_ERR("EHP", "Couldn't allocate memory for parser");
     lowMemoryAbort = true;
-    parseArena_.release();
-    inlineStyleBuf_ = nullptr;
-    blockStyleBuf_ = nullptr;
+    abortParse();
     return false;
   }
-
-  // Handle HTML entities (like &nbsp;) that aren't in XML spec or DTD
-  // Using DefaultHandlerExpand preserves normal entity expansion from DOCTYPE
-  XML_SetDefaultHandlerExpand(activeParser, defaultHandlerExpand);
-
-  if (!Storage.openFileForRead("EHP", filepath, parseFile_)) {
-    destroyXmlParser(activeParser);
-    activeParser = nullptr;
-    parseArena_.release();
-    inlineStyleBuf_ = nullptr;
-    blockStyleBuf_ = nullptr;
-    return false;
-  }
-  parseFileSize_ = parseFile_.size();
-
-  // Get file size to decide whether to show indexing popup.
-  if (popupFn && parseFileSize_ >= MIN_SIZE_FOR_POPUP) {
-    popupFn();
-  }
-
+  XML_SetDefaultHandlerExpand(activeParser, recordDefaultHandler);
   XML_SetUserData(activeParser, this);
-  XML_SetElementHandler(activeParser, startElement, endElement);
-  XML_SetCharacterDataHandler(activeParser, characterData);
+  XML_SetElementHandler(activeParser, recordStartElement, recordEndElement);
+  XML_SetCharacterDataHandler(activeParser, recordCharacterData);
 
-  // Compute the time taken to parse and build pages
-  parseStartTime_ = millis();
-  prewarmSectionAdvanceTable(parseFile_);
   return true;
 }
 
 ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
+  if (eventCache_ && eventCache_->replaying()) {
+    const HtmlEventCache::Callbacks callbacks{this, startElement, endElement, characterData, defaultHandlerExpand};
+    uint32_t offset = parseFileOffset_;
+    const auto result = eventCache_->replay(callbacks, offset);
+    parseFileOffset_ = offset;
+    if (lowMemoryAbort || result == HtmlEventCache::Step::Error) return ParseStatus::Error;
+    if (result == HtmlEventCache::Step::Malformed) malformedMarkupTruncated = true;
+    return result == HtmlEventCache::Step::More ? ParseStatus::More : ParseStatus::Done;
+  }
   if (!activeParser) {
     LOG_ERR("EHP", "parseStep called without an active parser");
     return ParseStatus::Error;
@@ -3971,6 +3998,7 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
   if (parseStatus == XML_STATUS_ERROR && !previewStopRequested) {
     if (htmlEnded_) {
       LOG_DBG("EHP", "Ignoring trailing data after </html>: %s", XML_ErrorString(XML_GetErrorCode(activeParser)));
+      if (eventCache_) eventCache_->recordChunk(parseFileOffset_, HtmlEventCache::Step::Done);
       return ParseStatus::Done;
     }
     LOG_ERR("EHP", "Parse error at line %lu:\n%s", XML_GetCurrentLineNumber(activeParser),
@@ -3979,6 +4007,7 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
       return ParseStatus::Error;
     }
     malformedMarkupTruncated = true;
+    if (eventCache_) eventCache_->recordChunk(parseFileOffset_, HtmlEventCache::Step::Malformed);
     return ParseStatus::Done;
   }
 
@@ -3988,12 +4017,15 @@ ChapterHtmlSlimParser::ParseStatus ChapterHtmlSlimParser::parseStep() {
   }
 
   if (done || previewStopRequested || parseStatus == XML_STATUS_SUSPENDED) {
+    if (eventCache_) eventCache_->recordChunk(parseFileOffset_, HtmlEventCache::Step::Done);
     return ParseStatus::Done;
   }
+  if (eventCache_) eventCache_->recordChunk(parseFileOffset_, HtmlEventCache::Step::More);
   return ParseStatus::More;
 }
 
 void ChapterHtmlSlimParser::abortParse() {
+  eventCache_.reset();
   pendingInlineImages.clear();
   if (activeParser) {
     destroyXmlParser(activeParser);
@@ -4076,6 +4108,12 @@ bool ChapterHtmlSlimParser::finishParse() {
   inlineStyleBuf_ = nullptr;
   blockStyleBuf_ = nullptr;
 
+  if (eventCache_) {
+    const bool replayed = eventCache_->replaying();
+    const bool saved = eventCache_->finish();
+    LOG_DBG("MID", "Chapter preparation complete: replay=%u saved=%u", replayed, saved);
+    eventCache_.reset();
+  }
   return true;
 }
 

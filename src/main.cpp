@@ -119,6 +119,7 @@ inline esp_sleep_wakeup_cause_t esp_sleep_get_wakeup_cause() { return ESP_SLEEP_
 #include "util/Dictionary.h"
 #include "util/DictionaryRegistry.h"
 #include "util/FrontlightSchedule.h"
+#include "util/ReaderWakeFrame.h"
 #include "util/ScreenshotUtil.h"
 #include "util/SleepWakePolicy.h"
 
@@ -1138,7 +1139,8 @@ void enterDeepSleep(bool fromTimeout) {
   powerManager.startDeepSleep(gpio);
 }
 
-void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, const bool useReaderRenderStack) {
+void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, const bool useReaderRenderStack,
+                          const std::string* wakeBook = nullptr) {
 #if !defined(SIMULATOR) && !FREEINK_MCU_C3
   // C3 X3/X4 detection already runs in HalGPIO::begin() before SPI owns the
   // panel pins. S3 boards initialize display SPI inside display.begin(), so an
@@ -1160,6 +1162,7 @@ void setupDisplayAndFonts(const bool seamless, const bool loadReaderResources, c
 #endif
   renderer.begin();
   display.setInverted(SETTINGS.screenInverted != 0);
+  if (wakeBook) ReaderWakeFrame::restore(renderer, *wakeBook);
   // FreeInkUI headers need more than 4 KB once the render loop and nested
   // screen builders share the task stack. Some S3 network flows can render a
   // parent screen before their deferred Wi-Fi child is promoted, so their
@@ -1431,13 +1434,21 @@ void setup() {
   isUc8279X3 = gpio.deviceIsX3() && BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3Uc8279;
 #endif
   const bool hasValidSleepFrame = resume == BootResume::SplashlessWake && isUc8279X3 && preflightSleepFrameBuffer();
+  const bool hasReaderWakeFrame = resume == BootResume::SplashlessWake && gpio.deviceIsX3() &&
+                                  SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME &&
+                                  APP_STATE.lastSleepFromReader && !APP_STATE.openEpubPath.empty() &&
+                                  APP_STATE.readerActivityLoadCount == 0 &&
+                                  !mappedInputManager.isPressed(MappedInputManager::Button::Back) &&
+                                  ReaderWakeFrame::preflight(APP_STATE.openEpubPath);
   const bool shouldRestoreSleepFrame =
       resume == BootResume::SplashlessWake && (isUc8279X3 ? hasValidSleepFrame : Storage.exists(SLEEP_FRAME_FILE));
   bool allowFastInitialReaderRefresh = false;
   bool x4WakeCanFastPaint = false;
 
-  setupDisplayAndFonts(SleepWakePolicy::shouldInitializeSeamlessly(resume, isUc8279X3, hasValidSleepFrame),
-                       resume != BootResume::Network, useReaderRenderStack);
+  setupDisplayAndFonts(
+      SleepWakePolicy::shouldInitializeSeamlessly(resume, isUc8279X3, hasValidSleepFrame || hasReaderWakeFrame),
+      resume != BootResume::Network, useReaderRenderStack, hasReaderWakeFrame ? &APP_STATE.openEpubPath : nullptr);
+  if (ReaderWakeFrame::wasRestored()) allowFastInitialReaderRefresh = true;
   logBootHeap("display and font resolver ready");
 
   switch (resume) {
@@ -1455,7 +1466,7 @@ void setup() {
       // us in a splashless-with-no-frame loop on the next boot.
       APP_STATE.showBootScreen = true;
       APP_STATE.saveToFile();
-      if (shouldRestoreSleepFrame && loadSleepFrameBuffer()) {
+      if (!ReaderWakeFrame::wasRestored() && shouldRestoreSleepFrame && loadSleepFrameBuffer()) {
         if (gpio.deviceIsX3()) {
           // begin() clears the X3 controller RAM. Restore the saved frame as
           // the baseline for the first reader paint without refreshing the panel.
@@ -1471,7 +1482,7 @@ void setup() {
           x4WakeCanFastPaint = true;
         }
 #endif
-      } else if (isUc8279X3 && hasValidSleepFrame) {
+      } else if (!ReaderWakeFrame::wasRestored() && isUc8279X3 && hasValidSleepFrame) {
         // The frame passed the size preflight but could not be read after display
         // setup. Do one clean, device-specific recovery rather than painting
         // differentially against an invalid controller baseline.

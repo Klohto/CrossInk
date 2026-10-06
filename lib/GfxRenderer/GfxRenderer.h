@@ -353,6 +353,9 @@ class GfxRenderer {
   // does not define it.
   bool supportsDirectGrayscale() const;
   bool displayDirectGrayscaleBase(HalDisplay::RefreshMode fallback = HalDisplay::HALF_REFRESH) const;
+  // The caller renders overlay masks, converts them against its BW base, then
+  // uploads complete planes. Keep glyph rasterization in overlay mode here.
+  bool beginDirectGrayscaleOverlay() const;
   RenderMode getRenderMode() const { return renderMode; }
   // Grayscale preconditioning settle pass (no-op on X4). The rect overload
   // takes the gray region in LOGICAL screen coordinates and rotates it to the
