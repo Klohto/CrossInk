@@ -96,6 +96,16 @@ class PersistableStoreBase {
  */
 template <typename T>
 class PersistableStore : public PersistableStoreBase {
+ private:
+  inline static std::atomic<T*> ready_{nullptr};
+
+  // Keep construction out of the access path used while reading and drawing.
+  __attribute__((noinline)) static T& initializeInstance() {
+    static T instance;
+    ready_.store(&instance, std::memory_order_release);
+    return instance;
+  }
+
  protected:
   PersistableStore() = default;
   ~PersistableStore() = default;
@@ -113,14 +123,11 @@ class PersistableStore : public PersistableStoreBase {
     const_cast<T*>(static_cast<const T*>(this))->loadFromFile();
   }
 
-  static T& getInstance() {
+  __attribute__((always_inline)) static T& getInstance() {
     // ESP32-C3 calls the runtime guard on each access to a local singleton.
     // Publish the completed object once. Later reads need one atomic load.
-    static std::atomic<T*> ready{nullptr};
-    if (T* cached = ready.load(std::memory_order_acquire)) return *cached;
-    static T instance;
-    ready.store(&instance, std::memory_order_release);
-    return instance;
+    if (T* cached = ready_.load(std::memory_order_acquire)) return *cached;
+    return initializeInstance();
   }
 
   bool saveToFile() const {
