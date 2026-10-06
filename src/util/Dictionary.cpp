@@ -1278,7 +1278,7 @@ std::vector<std::string> Dictionary::getStemVariants(const std::string& word) {
 // Fuzzy search (zero persistent RAM — uses findPageBounds for neighbourhood)
 // ---------------------------------------------------------------------------
 
-int Dictionary::editDistance(const std::string& a, const std::string& b, int maxDist, int* dp) {
+int Dictionary::editDistance(std::string_view a, std::string_view b, int maxDist, int* dp) {
   int m = static_cast<int>(a.size());
   int n = static_cast<int>(b.size());
   if (std::abs(m - n) > maxDist) return maxDist + 1;
@@ -1434,7 +1434,8 @@ std::vector<std::string> Dictionary::findSimilar(const std::string& word, int ma
     if (len == 0) continue;
     if (cistrcmp(wordBuf, word.c_str()) == 0) continue;
 
-    int dist = editDistance(wordBuf, word, maxDist, editDistanceScratch.get());
+    int dist =
+        editDistance(std::string_view(wordBuf, static_cast<size_t>(len)), word, maxDist, editDistanceScratch.get());
     if (dist <= maxDist) {
       if (pool.size() + static_cast<size_t>(len) + 1 > 0xFFFF) break;
       const uint16_t offset = TextPool::append(pool, wordBuf, static_cast<size_t>(len));

@@ -59,6 +59,29 @@ TEST(UiSymbolFallback, FirstIntervalLookupKeepsGapsAndOverlappingBoundaryChoice)
   EXPECT_EQ(font.findGlyph(10), nullptr);
 }
 
+TEST(UiSymbolFallback, LigatureBoundsKeepDuplicateKeysAndPresentationFormRules) {
+  const EpdLigaturePair pairs[] = {
+      {0x00660069, 0xFB01}, {0x00660069, 0xFB02}, {0x0066006C, 0xFB02}, {0x03B103B2, 0x1000}, {0xFB500061, 0x1001}};
+  EpdFontData data{};
+  data.ligaturePairs = pairs;
+  data.ligaturePairCount = sizeof(pairs) / sizeof(pairs[0]);
+  const EpdFont font(&data);
+  EXPECT_EQ(font.getLigature('e', 'i'), 0u);
+  EXPECT_EQ(font.getLigature('f', 'i'), 0xFB01u);
+  EXPECT_EQ(font.getLigature('f', 'l'), 0xFB02u);
+  EXPECT_EQ(font.getLigature('f', 'k'), 0u);
+  EXPECT_EQ(font.getLigature(0x03B1, 0x03B2), 0x1000u);
+  EXPECT_EQ(font.getLigature(0xFB50, 'a'), 0u);
+  EXPECT_EQ(font.getLigature(0xFFFF, 'a'), 0u);
+  EXPECT_EQ(font.getLigature(0x10000, 'a'), 0u);
+  EXPECT_EQ(font.getLigature('f', 0x10000), 0u);
+  data.ligaturePairCount = 0;
+  EXPECT_EQ(font.getLigature('f', 'i'), 0u);
+  data.ligaturePairCount = 1;
+  data.ligaturePairs = nullptr;
+  EXPECT_EQ(font.getLigature('f', 'i'), 0u);
+}
+
 TEST(UiSymbolFallback, SharesTheSameRasterAtBothScalesAndStyles) {
   for (const auto* family : {&small, &large}) {
     for (const auto style : {EpdFontFamily::REGULAR, EpdFontFamily::BOLD}) {

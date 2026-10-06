@@ -6,10 +6,12 @@
 - Publish completed store singletons through a lock-free pointer. Settings reads avoid repeated runtime guard locks.
 - Skip Unicode range scans when a character is below the first supported range. Use this path during layout, font fallback and dictionary lookup.
 - Read glyphs in the first font interval directly. Later character ranges keep the binary search.
+- Skip ligature searches when the first character is outside the sorted table.
 - Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
 - Skip packed groups of four white glyph pixels. They leave every framebuffer plane alone.
 - Call navigation callbacks directly during each poll. Keep the press, hold and release order.
 - Inline the one-bit DEFLATE decoder used for compressed fonts and cached content.
+- Compare dictionary suggestions directly with the read buffer to avoid a temporary string for each word.
 - Use direct grayscale in the X3 BMP viewer. Remove the dark base refresh and one BMP decode.
 - Draw unscaled BMP rows with one coordinate transform per row. Covers, boot and sleep images, and book images use this path.
 - Map native BMP palettes once and skip resampling divisions for images that keep their source size.

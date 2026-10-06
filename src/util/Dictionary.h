@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Helper for constructing dictionary file paths from a folder base path.
@@ -209,5 +210,5 @@ class Dictionary {
                                 const char* target, uint32_t* startByte, uint32_t* endByte,
                                 bool startBeforeCaseMatches);
 
-  static int editDistance(const std::string& a, const std::string& b, int maxDist, int* dp);
+  static int editDistance(std::string_view a, std::string_view b, int maxDist, int* dp);
 };

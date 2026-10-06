@@ -183,6 +183,9 @@ uint32_t EpdFont::getLigature(const uint32_t leftCp, const uint32_t rightCp) con
   if (isArabicPresentationForm(leftCp) || isArabicPresentationForm(rightCp)) {
     return 0;
   }
+  if (leftCp < (pairs[0].pair >> 16) || leftCp > (pairs[count - 1].pair >> 16)) {
+    return 0;
+  }
 
   const uint32_t key = (leftCp << 16) | rightCp;
   const auto* end = pairs + count;
