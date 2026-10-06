@@ -16,6 +16,7 @@
 #include "components/CoverGridHomeUi.h"
 #include "components/OptionPopup.h"
 #include "util/ButtonNavigator.h"
+#include "util/CarouselArrowGesture.h"
 
 struct RecentBook;
 struct Rect;
@@ -34,6 +35,7 @@ class HomeActivity final : public Activity {
   bool gridHasContinueReading = false;
   int selectorIndex = 0;
   int lastCarouselBookIndex = 0;  // remembered position when leaving carousel row
+  CarouselArrowGesture carouselArrowGesture;
   int carouselCoverTouchDownIndex = -1;
   bool carouselCoverTouchDownWasSelected = false;
   // Touch menus use a momentary pressed state. Keep it separate from the

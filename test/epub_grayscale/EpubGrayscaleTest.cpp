@@ -300,8 +300,8 @@ TEST_F(EpubGrayscaleTest, TextPairsBandsWithBoundedHeapAndFallsBackOnAllocationF
     Page page;
     std::vector<uint8_t> scratch(r.stride * 80);
     const auto live = r.bw;
-    ASSERT_TRUE(EpubGrayscale::runTiledGrayscalePass(r, page, 1, 0, 0, true, true, false,
-                                                   scratch.data(), scratch.size(), false));
+    ASSERT_TRUE(EpubGrayscale::runTiledGrayscalePass(r, page, 1, 0, 0, true, true, false, scratch.data(),
+                                                     scratch.size(), false));
     EXPECT_EQ(page.allVisits, failure == 0 ? 7 : 14);
     EXPECT_EQ(r.bw, live);
     EXPECT_TRUE(fakeheap::live.empty());
@@ -319,6 +319,46 @@ TEST_F(EpubGrayscaleTest, CleanupPassCanUseWholePlanesWithoutAnAsyncBase) {
   ASSERT_TRUE(EpubGrayscale::runTiledGrayscalePass(r, page, 1, 0, 0, true, true, false, nullptr, 0, false));
   EXPECT_EQ(page.allVisits, 2);
   EXPECT_EQ(r.events, (std::vector<std::string>{"wait", "lsb", "msb", "gray", "cleanup"}));
+}
+
+TEST_F(EpubGrayscaleTest, DirectTextMatchesOverlayPixelsAndPreservesTheLiveBase) {
+  fakeheap::reset(false);
+  fakeheap::internal.free = 100000;
+  fakeheap::internal.largest = 60000;
+  GfxRenderer direct, overlay;
+  direct.direct = true;
+  Page page;
+  std::vector<uint8_t> scratch(direct.stride * 80);
+  const auto live = direct.bw;
+  ASSERT_TRUE(EpubGrayscale::runTiledGrayscalePass(overlay, page, 1, 0, 0, true, true, false, scratch.data(),
+                                                   scratch.size(), false));
+  EpubGrayscale::absoluteFromOverlay(live.data(), overlay.lsb.data(), overlay.msb.data(), live.size());
+  ASSERT_TRUE(EpubGrayscale::runDirectTextPass(direct, page, 1, 0, 0, true, scratch.data(), scratch.size()));
+  EXPECT_EQ(direct.lsb, overlay.lsb);
+  EXPECT_EQ(direct.msb, overlay.msb);
+  EXPECT_EQ(direct.bw, live);
+  EXPECT_EQ(direct.events.front(), "direct");
+  EXPECT_EQ(direct.events[direct.events.size() - 2], "gray");
+  EXPECT_FALSE(direct.active);
+  EXPECT_TRUE(fakeheap::live.empty());
+}
+
+TEST_F(EpubGrayscaleTest, DirectTextAllocationFailureLeavesTheControllerAndBaseUntouched) {
+  for (const bool failAllocation : {false, true}) {
+    fakeheap::reset(false);
+    fakeheap::internal.free = failAllocation ? 100000 : 60000;
+    fakeheap::internal.largest = 60000;
+    fakeheap::internal.fail = failAllocation;
+    GfxRenderer r;
+    r.direct = true;
+    Page page;
+    const auto live = r.bw;
+    std::vector<uint8_t> scratch(r.stride * 80);
+    EXPECT_FALSE(EpubGrayscale::runDirectTextPass(r, page, 1, 0, 0, true, scratch.data(), scratch.size()));
+    EXPECT_EQ(r.bw, live);
+    EXPECT_TRUE(r.events.empty());
+    EXPECT_EQ(page.allVisits, 0);
+  }
 }
 
 TEST_F(EpubGrayscaleTest, MissingScratchAndUnsupportedPathsPreserveFallbackContract) {

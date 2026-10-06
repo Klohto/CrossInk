@@ -34,6 +34,7 @@
 #include "components/UiAppHelpers.h"
 #include "components/icons/libraryIcons.h"
 #include "components/icons/listIcons.h"
+#include "util/InputWorkPriority.h"
 
 namespace fui = freeink::ui;
 
@@ -849,7 +850,7 @@ void LibraryActivity::loop() {
     return;
   }
   // Prepare at most one cover between input checks.
-  loadGridPageCovers();
+  if (InputWorkPriority::canPrepare(millis())) loadGridPageCovers();
 }
 
 void LibraryActivity::handleInput(const LibraryInputBuffer::Event& input) {

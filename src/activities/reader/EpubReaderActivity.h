@@ -1,6 +1,7 @@
 #pragma once
 #include <Epub.h>
 #include <Epub/FootnoteEntry.h>
+#include <Epub/ReaderRaster.h>
 #include <Epub/Section.h>
 #include <Memory.h>
 #include <freertos/FreeRTOS.h>
@@ -160,9 +161,38 @@ class EpubReaderActivity final : public Activity {
   QueuedTurnRenderingState queuedTurnRendering;
   unsigned long pageShownAtMs = 0UL;
   unsigned long lastRenderCompleteMs = 0UL;
+  int lastRenderedPage = -1;
+  int lastRenderedSpine = -1;
+  uint32_t lastRenderedProfile = 0;
   int idlePrewarmSpine = -1;
   int idlePrewarmPage = -1;
   int idlePrewarmFontId = 0;
+  ReaderRaster rasterCache;
+  std::unique_ptr<Page> rasterPage;
+  std::unique_ptr<Section> rasterSection;
+  HeapByteBuffer rasterExtraPlanes;
+  int rasterRowsPerStep = ReaderRaster::BAND_ROWS;
+  std::string rasterWritePath;
+  std::array<uint32_t, 8> rasterSlotUse{};
+  uint32_t rasterUseClock = 0;
+  ReaderRaster::Key rasterKey;
+  int rasterVisiblePage = -1;
+  int rasterVisibleSpine = -1;
+  uint32_t rasterVisibleProfile = 0;
+  uint8_t rasterReadyMask = 0;
+  uint8_t rasterPreparingIndex = 0;
+  int rasterRow = 0;
+  std::atomic<bool> rasterCancelRequested{false};
+  static constexpr int FINISHED_PAGES_AHEAD = 4;
+  static constexpr int RASTER_CACHE_SLOTS = 8;
+  ReaderRaster::Key pageRasterKey(int page) const;
+  std::string pageRasterPath(int slot) const;
+  std::string findPageRaster(const ReaderRaster::Key& key);
+  std::string nextPageRasterSlot();
+  void cancelRasterPreparation();
+  void prepareFinishedPages();
+  bool renderFinishedPage();
+  void saveWakeFrame() override;
   bool paceSampleWarmupPending = true;
   uint32_t sessionPaceSampleSeconds = 0;
   uint16_t sessionPaceSampleCount = 0;
@@ -341,14 +371,10 @@ class EpubReaderActivity final : public Activity {
   // main loop a chance to observe input between pages.
   static constexpr int INTERACTIVE_BUILD_PAGES_PER_CHUNK = 1;
   static constexpr int BACKGROUND_BUILD_PAGES_PER_TICK = 1;
-  // How many pages to keep laid out ahead of the reader for a still-building section. A page
-  // turn is ~1s on e-ink and a page builds in ~30ms, so the reader can't out-click the builder
-  // -- a tiny buffer is enough. The background build stops once the watermark is this far
-  // ahead and resumes as the reader advances; building unbounded instead locked up input by
-  // monopolizing the RenderLock. A giant single-spine book therefore never finalizes its .bin
-  // in one sitting -- instant reopen comes from Section::suspendBuild() persisting the pages
-  // already laid out as a partial file on exit/sleep.
-  static constexpr int BUILD_WINDOW_AHEAD = 5;
+  // Keep twelve layout pages ahead, separately from the four finished raster
+  // pages. Each build tick yields after one page so input can take priority.
+  // Large chapters persist their readable prefix on exit or sleep.
+  static constexpr int BUILD_WINDOW_AHEAD = 12;
   // Reopening a partial does not immediately restart its whole-chapter extension build.
   // Start it only when the reader is close enough to need pages past the watermark.
   static constexpr int PARTIAL_REBUILD_START_MARGIN = 15;
@@ -516,8 +542,9 @@ class EpubReaderActivity final : public Activity {
   bool backgroundSectionBuildHasHeap();
   void idlePrewarmNextPage();
   bool skipLoopDelay() override {
-    return sectionBuildWantsTick() && !backgroundBuildPausedForLowMemory &&
-           !backgroundBuildYieldForInput.load(std::memory_order_relaxed);
+    return (sectionBuildWantsTick() && !backgroundBuildPausedForLowMemory &&
+            !backgroundBuildYieldForInput.load(std::memory_order_relaxed)) ||
+           (rasterPage && !rasterCancelRequested.load(std::memory_order_relaxed));
   }
   bool isReaderActivity() const override { return true; }
   bool isBookReaderActivity() const override { return true; }

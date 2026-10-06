@@ -22,6 +22,7 @@
 #include "Epub/css/CssParser.h"
 #include "Epub/css/CssStyle.h"
 #include "Epub/tables/CompactTableLayout.h"
+#include "HtmlEventCache.h"
 
 class GfxRenderer;
 class Epub;
@@ -123,6 +124,7 @@ class ChapterHtmlSlimParser {
   bool htmlEnded_ = false;
   bool syntheticCharacterData = false;
   XML_Parser activeParser = nullptr;
+  std::unique_ptr<HtmlEventCache> eventCache_;
   FsFile parseFile_;
   size_t parseFileOffset_ = 0;
   size_t parseFileSize_ = 0;
@@ -316,6 +318,10 @@ class ChapterHtmlSlimParser {
   static void XMLCALL characterData(void* userData, const XML_Char* s, int len);
   static void XMLCALL defaultHandlerExpand(void* userData, const XML_Char* s, int len);
   static void XMLCALL endElement(void* userData, const XML_Char* name);
+  static void XMLCALL recordStartElement(void* userData, const XML_Char* name, const XML_Char** atts);
+  static void XMLCALL recordCharacterData(void* userData, const XML_Char* text, int len);
+  static void XMLCALL recordDefaultHandler(void* userData, const XML_Char* text, int len);
+  static void XMLCALL recordEndElement(void* userData, const XML_Char* name);
 
  public:
   explicit ChapterHtmlSlimParser(

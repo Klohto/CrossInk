@@ -18,6 +18,7 @@ class GfxRenderer {
   Orientation orientation = Portrait;
   RenderMode mode = BW;
   bool supported = true, inverted = false, active = false;
+  bool direct = false;
   int origin = 0, rows = 0, placeholders = 0;
   uint8_t* target = nullptr;
   uint8_t* msbTarget = nullptr;
@@ -35,6 +36,12 @@ class GfxRenderer {
   RenderMode getRenderMode() const { return mode; }
   void setRenderMode(RenderMode m) { mode = m; }
   bool supportsStripGrayscale() const { return supported && !inverted; }
+  bool supportsDirectGrayscale() const { return direct; }
+  bool beginDirectGrayscaleOverlay() {
+    events.push_back("direct");
+    return direct;
+  }
+  const uint8_t* getFrameBuffer() const { return bw.data(); }
   bool isStripTargetActive() const { return active; }
   int getWriteOriginY() const { return active ? origin : 0; }
   int getWriteRows() const { return active ? rows : height; }
