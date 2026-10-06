@@ -40,6 +40,19 @@ static void flip_runs(bidi_char* from, uchar* levels, int tlevel, int count) {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 uchar bidi_class(ucschar ch) {
+  // ASCII classes use the same values as bidiclasses.t.
+  static const uchar ascii[] = {
+      BN, BN, BN, BN, BN, BN, BN, BN, BN, S,  B,  S,  WS, B,  BN, BN, /* 0x00..0x0F */
+      BN, BN, BN, BN, BN, BN, BN, BN, BN, BN, BN, BN, B,  B,  B,  S,  /* 0x10..0x1F */
+      WS, ON, ON, ET, ET, ET, ON, ON, ON, ON, ON, ES, CS, ES, CS, CS, /* 0x20..0x2F */
+      EN, EN, EN, EN, EN, EN, EN, EN, EN, EN, CS, ON, ON, ON, ON, ON, /* 0x30..0x3F */
+      ON, L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  /* 0x40..0x4F */
+      L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  ON, ON, ON, ON, ON, /* 0x50..0x5F */
+      ON, L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  /* 0x60..0x6F */
+      L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  L,  ON, ON, ON, ON, BN, /* 0x70..0x7F */
+  };
+  if (ch < sizeof(ascii)) return ascii[ch];
+
   static const struct {
     ucschar first, last;
     uchar type;
@@ -49,7 +62,8 @@ uchar bidi_class(ucschar ch) {
 
   int i = -1, j = lengthof(lookup);
   while (j - i > 1) {
-    int k = (i + j) / 2;
+    // i + j is nonnegative while j - i > 1.
+    int k = (i + j) >> 1;
     if (ch < lookup[k].first)
       j = k;
     else if (ch > lookup[k].last)

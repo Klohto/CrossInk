@@ -2,6 +2,8 @@
 
 ### Changed
 
+- Read ASCII text-direction classes from a constant table during layout and drawing. Use a shift for range midpoints.
+
 - Map the requested input button once. Skip unused front and side mappings during each input poll.
 - Publish completed store singletons through a lock-free pointer. Settings reads avoid repeated runtime guard locks.
 - Keep the acquired SPI mutex handle in its guard. Release uses that handle for SD and display transactions.
