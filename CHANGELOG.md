@@ -24,7 +24,7 @@ This version builds on 1.6.1-1.0. It prepares reading pages ahead and shows the 
 
 Preparation runs on the X3 as you read. The first visit to a chapter still prepares its content. Completed screen images cover ordinary text pages; pages with images or special reader overlays use the existing drawing path. Keep free space on the SD card for these caches.
 
-See [reader preparation](https://github.com/Klohto/CrossInk/blob/feat/x3-reading-2.0/docs/reader-preparation.md) for the cache details.
+See [reader preparation](docs/reader-preparation.md) for the cache details.
 
 ## [1.6.1-1.0] - 2026-10-06
 
