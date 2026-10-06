@@ -5,6 +5,14 @@ nav_order: 2
 
 # Installation
 
+## X3 builds from this fork
+
+Download the X3 BIN from [Klohto/CrossInk releases](https://github.com/Klohto/CrossInk/releases).
+
+With a reader that already runs CrossInk, open Wi-Fi File Manager and upload the BIN to the SD card. Then use `Settings > System > SD Card Firmware Update` to select it. This path works without a cable or card reader.
+
+From 1.6.1-2.1, the firmware update check in Settings uses the latest release from this fork. Install 2.1 once through the SD update path to change that source. An older installed build keeps its previous update address until it is replaced.
+
 ## Supported Devices
 
 - Xteink X3, X4

@@ -113,7 +113,7 @@ bool BmpViewerActivity::renderPngImage() {
   config.y = y;
   config.maxWidth = drawWidth;
   config.maxHeight = drawHeight;
-  config.useGrayscale = true;
+  config.useGrayscale = false;  // This PNG viewer uses a single monochrome screen update.
   config.useDithering = true;
   config.performanceMode = false;
   config.useExactDimensions = true;
@@ -180,6 +180,12 @@ void BmpViewerActivity::drawImage() {
 
     // 2. Parse headers to get dimensions
     if (bitmap.parseHeaders() == BmpReaderError::Ok) {
+      if (bitmap.getWidth() > pageWidth || bitmap.getHeight() > pageHeight) {
+        const float scale = std::min(static_cast<float>(pageWidth) / bitmap.getWidth(),
+                                     static_cast<float>(pageHeight) / bitmap.getHeight());
+        bitmap.setDitheredOutputSize(static_cast<int>(std::floor((bitmap.getWidth() - 1) * scale)) + 1,
+                                     static_cast<int>(std::floor((bitmap.getHeight() - 1) * scale)) + 1);
+      }
       int x, y;
 
       if (bitmap.getWidth() > pageWidth || bitmap.getHeight() > pageHeight) {

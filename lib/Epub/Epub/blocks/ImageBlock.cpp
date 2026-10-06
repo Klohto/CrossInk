@@ -38,9 +38,9 @@ std::string getCachePath(const std::string& imagePath) {
   // Replace extension with .pxc (pixel cache)
   size_t dotPos = imagePath.rfind('.');
   if (dotPos != std::string::npos) {
-    return imagePath.substr(0, dotPos) + ".pxc";
+    return imagePath.substr(0, dotPos) + "_fs1.pxc";
   }
-  return imagePath + ".pxc";
+  return imagePath + "_fs1.pxc";
 }
 
 // Half-open image-local bounds shared by retained and streamed PXC rendering.

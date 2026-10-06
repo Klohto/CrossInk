@@ -1,5 +1,30 @@
 ## [Unreleased]
 
+## [1.6.1-2.1] - 2026-10-06
+
+[Download the X3 .bin](https://github.com/Klohto/CrossInk/releases/download/1.6.1-2.1/crossink-1.6.1-2.1-x3.bin)
+
+### Sleep
+
+- A prepared custom BMP or book cover can appear before the reader saves progress and closes. Internal memory checks keep the existing cleanup order when the cover needs more memory.
+- A cold cover or a cover that needs memory shows temporary Entering sleep feedback after a manual Sleep press. Once the cover is cached, later locks can show it before reader cleanup.
+- The final custom image and book cover have no Sleeping badge. Progress and the saved wake page still finish before deep sleep.
+
+### Images
+
+- Raw BMPs, converted JPEG and PNG covers, and EPUB images use Floyd–Steinberg diffusion with alternating row direction. This is the method from `05-diffused.bmp` in the image comparison.
+- Gray image paths use the four tones 0, 85, 170 and 255. Monochrome thumbnails and the PNG viewer apply the same diffusion with black and white. Font smoothing keeps its current method.
+- BMP diffusion follows visual row order, so top-down and bottom-up files produce the same picture. Oversized raw BMPs shrink before diffusion in the file viewer.
+- JPEG image blocks form complete rows before diffusion. Scratch memory stays bounded; a decoder that cannot allocate diffusion scratch uses its previous bounded fallback.
+- New `fs1` names for covers, thumbnails and pixel caches rebuild old image results as each image is used. Images already stored in the display's four tones keep those values.
+
+### Firmware updates
+
+- Settings checks the latest release from `Klohto/CrossInk` and selects its X3 BIN.
+- Version checks compare the fork suffix, including `1.6.1-2.0` and `1.6.1-2.1`. Download hash checks and firmware validation stay active.
+
+Install 2.1 once through Wi-Fi File Manager and SD Card Firmware Update to change the update source. See [work on hold](docs/backlog.md) for the deferred requests.
+
 ## [1.6.1-2.0] - 2026-10-06
 
 This version builds on 1.6.1-1.0. It prepares reading pages ahead and shows the saved page earlier when you wake the X3.

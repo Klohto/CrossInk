@@ -242,6 +242,12 @@ std::string UITheme::getCoverThumbPath(const std::string& coverBmpPath, int widt
   }
 
   std::string thumbPath = coverBmpPath;
+  if (thumbPath.find("/epub_") != std::string::npos) {
+    const size_t legacyPrefix = thumbPath.rfind("/thumb_");
+    if (legacyPrefix != std::string::npos && thumbPath.compare(legacyPrefix, 11, "/thumb_fs1_") != 0) {
+      thumbPath.insert(legacyPrefix + 7, "fs1_");
+    }
+  }
   size_t widthPos = thumbPath.find(kWidthPlaceholder, 0);
   if (widthPos != std::string::npos) {
     thumbPath.replace(widthPos, kWidthPlaceholderLength, std::to_string(width));

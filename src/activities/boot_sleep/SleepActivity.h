@@ -19,10 +19,10 @@ class SleepActivity final : public Activity {
   void onEnter() override;
   // Whether this screen is independent of the outgoing activity's saves.
   bool rendersBeforeExit() const;
+  void showPendingSleepFeedback() const;
 
  private:
   void renderDefaultSleepScreen() const;
-  void drawSleepingLabel() const;
   void renderCustomSleepScreen() const;
   void renderCoverSleepScreen() const;
   void renderReadingStatsSleepScreen() const;

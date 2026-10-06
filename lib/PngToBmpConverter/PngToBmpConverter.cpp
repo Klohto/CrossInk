@@ -19,8 +19,8 @@
 // IMAGE PROCESSING OPTIONS - Same as JpegToBmpConverter for consistency
 // ============================================================================
 constexpr bool USE_8BIT_OUTPUT = false;
-constexpr bool USE_ATKINSON = true;
-constexpr bool USE_FLOYD_STEINBERG = false;
+constexpr bool USE_ATKINSON = false;
+constexpr bool USE_FLOYD_STEINBERG = true;
 constexpr bool USE_PRESCALE = true;
 // ============================================================================
 
@@ -699,12 +699,12 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
   // Create ditherers (same as JpegToBmpConverter)
   std::unique_ptr<AtkinsonDitherer> atkinsonDitherer;
   std::unique_ptr<FloydSteinbergDitherer> fsDitherer;
-  std::unique_ptr<Atkinson1BitDitherer> atkinson1BitDitherer;
+  std::unique_ptr<FloydSteinbergDitherer> monoDitherer;
 
   if (oneBit) {
-    atkinson1BitDitherer = makeUniqueNoThrow<Atkinson1BitDitherer>(outWidth);
-    if (!atkinson1BitDitherer || !atkinson1BitDitherer->isValid()) {
-      LOG_ERR("PNG", "OOM: Atkinson1BitDitherer or row buffers");
+    monoDitherer = makeUniqueNoThrow<FloydSteinbergDitherer>(outWidth, true, true);
+    if (!monoDitherer || !monoDitherer->isValid()) {
+      LOG_ERR("PNG", "OOM: Floyd-Steinberg monochrome rows or row buffers");
       return false;
     }
   } else if (!USE_8BIT_OUTPUT) {
@@ -766,20 +766,25 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
       memset(rowBuffer, 0, bytesPerRow);
 
       if (USE_8BIT_OUTPUT && !oneBit) {
-        for (int x = 0; x < outWidth; x++) {
+        for (int step = 0; step < outWidth; ++step) {
+          const auto* activeDitherer = oneBit ? monoDitherer.get() : fsDitherer.get();
+          const int x = activeDitherer && activeDitherer->isReverseRow() ? outWidth - 1 - step : step;
           rowBuffer[x] = adjustPixel(grayRow[x]);
         }
       } else if (oneBit) {
-        for (int x = 0; x < outWidth; x++) {
-          const uint8_t bit =
-              atkinson1BitDitherer ? atkinson1BitDitherer->processPixel(grayRow[x], x) : quantize1bit(grayRow[x], x, y);
+        for (int step = 0; step < outWidth; ++step) {
+          const auto* activeDitherer = oneBit ? monoDitherer.get() : fsDitherer.get();
+          const int x = activeDitherer && activeDitherer->isReverseRow() ? outWidth - 1 - step : step;
+          const uint8_t bit = monoDitherer ? monoDitherer->processPixel(grayRow[x], x) : quantize1bit(grayRow[x], x, y);
           const int byteIndex = x / 8;
           const int bitOffset = 7 - (x % 8);
           rowBuffer[byteIndex] |= (bit << bitOffset);
         }
-        if (atkinson1BitDitherer) atkinson1BitDitherer->nextRow();
+        if (monoDitherer) monoDitherer->nextRow();
       } else {
-        for (int x = 0; x < outWidth; x++) {
+        for (int step = 0; step < outWidth; ++step) {
+          const auto* activeDitherer = oneBit ? monoDitherer.get() : fsDitherer.get();
+          const int x = activeDitherer && activeDitherer->isReverseRow() ? outWidth - 1 - step : step;
           const uint8_t gray = adjustPixel(grayRow[x]);
           uint8_t twoBit;
           if (atkinsonDitherer) {
@@ -832,22 +837,27 @@ bool PngToBmpConverter::pngFileToBmpStreamInternal(FsFile& pngFile, Print& bmpOu
         memset(rowBuffer, 0, bytesPerRow);
 
         if (USE_8BIT_OUTPUT && !oneBit) {
-          for (int x = 0; x < outWidth; x++) {
+          for (int step = 0; step < outWidth; ++step) {
+            const auto* activeDitherer = oneBit ? monoDitherer.get() : fsDitherer.get();
+            const int x = activeDitherer && activeDitherer->isReverseRow() ? outWidth - 1 - step : step;
             const uint8_t gray = (rowCount[x] > 0) ? (rowAccum[x] / rowCount[x]) : 0;
             rowBuffer[x] = adjustPixel(gray);
           }
         } else if (oneBit) {
-          for (int x = 0; x < outWidth; x++) {
+          for (int step = 0; step < outWidth; ++step) {
+            const auto* activeDitherer = oneBit ? monoDitherer.get() : fsDitherer.get();
+            const int x = activeDitherer && activeDitherer->isReverseRow() ? outWidth - 1 - step : step;
             const uint8_t gray = (rowCount[x] > 0) ? (rowAccum[x] / rowCount[x]) : 0;
-            const uint8_t bit =
-                atkinson1BitDitherer ? atkinson1BitDitherer->processPixel(gray, x) : quantize1bit(gray, x, currentOutY);
+            const uint8_t bit = monoDitherer ? monoDitherer->processPixel(gray, x) : quantize1bit(gray, x, currentOutY);
             const int byteIndex = x / 8;
             const int bitOffset = 7 - (x % 8);
             rowBuffer[byteIndex] |= (bit << bitOffset);
           }
-          if (atkinson1BitDitherer) atkinson1BitDitherer->nextRow();
+          if (monoDitherer) monoDitherer->nextRow();
         } else {
-          for (int x = 0; x < outWidth; x++) {
+          for (int step = 0; step < outWidth; ++step) {
+            const auto* activeDitherer = oneBit ? monoDitherer.get() : fsDitherer.get();
+            const int x = activeDitherer && activeDitherer->isReverseRow() ? outWidth - 1 - step : step;
             const uint8_t gray = adjustPixel((rowCount[x] > 0) ? (rowAccum[x] / rowCount[x]) : 0);
             uint8_t twoBit;
             if (atkinsonDitherer) {

@@ -19,8 +19,8 @@
 // ============================================================================
 constexpr bool USE_8BIT_OUTPUT = false;  // true: 8-bit grayscale (no quantization), false: 2-bit (4 levels)
 // Dithering method selection (only one should be true, or all false for simple quantization):
-constexpr bool USE_ATKINSON = true;          // Atkinson dithering (cleaner than F-S, less error diffusion)
-constexpr bool USE_FLOYD_STEINBERG = false;  // Floyd-Steinberg error diffusion (can cause "worm" artifacts)
+constexpr bool USE_ATKINSON = false;         // Atkinson dithering (cleaner than F-S, less error diffusion)
+constexpr bool USE_FLOYD_STEINBERG = true;   // Floyd-Steinberg error diffusion (can cause "worm" artifacts)
 constexpr bool USE_NOISE_DITHERING = false;  // Hash-based noise dithering (good for downsampling)
 // Pre-resize to target display size (CRITICAL: avoids dithering artifacts from post-downsampling)
 constexpr bool USE_PRESCALE = true;  // true: scale image to target size before dithering
@@ -236,7 +236,7 @@ struct BmpConvertCtx {
 
   std::unique_ptr<AtkinsonDitherer> atkinsonDitherer;
   std::unique_ptr<FloydSteinbergDitherer> fsDitherer;
-  std::unique_ptr<Atkinson1BitDitherer> atkinson1BitDitherer;
+  std::unique_ptr<FloydSteinbergDitherer> monoDitherer;
 
   bool error;
 };
@@ -336,14 +336,18 @@ static void writeOutputRow(BmpConvertCtx* ctx, const uint8_t* srcRow, int outY) 
       ctx->bmpRow[x] = adjustPixel(srcRow[x]);
     }
   } else if (ctx->oneBit) {
-    for (int x = 0; x < ctx->outWidth; x++) {
-      const uint8_t bit = ctx->atkinson1BitDitherer ? ctx->atkinson1BitDitherer->processPixel(srcRow[x], x)
-                                                    : quantize1bit(srcRow[x], x, outY);
+    for (int step = 0; step < ctx->outWidth; ++step) {
+      const bool reverse = ctx->monoDitherer && ctx->monoDitherer->isReverseRow();
+      const int x = reverse ? ctx->outWidth - 1 - step : step;
+      const uint8_t bit =
+          ctx->monoDitherer ? ctx->monoDitherer->processPixel(srcRow[x], x) : quantize1bit(srcRow[x], x, outY);
       ctx->bmpRow[x / 8] |= (bit << (7 - (x % 8)));
     }
-    if (ctx->atkinson1BitDitherer) ctx->atkinson1BitDitherer->nextRow();
+    if (ctx->monoDitherer) ctx->monoDitherer->nextRow();
   } else {
-    for (int x = 0; x < ctx->outWidth; x++) {
+    for (int step = 0; step < ctx->outWidth; ++step) {
+      const bool reverse = ctx->fsDitherer && ctx->fsDitherer->isReverseRow();
+      const int x = reverse ? ctx->outWidth - 1 - step : step;
       const uint8_t gray = adjustPixel(srcRow[x]);
       uint8_t twoBit;
       if (ctx->atkinsonDitherer) {
@@ -445,15 +449,19 @@ static void flushScaledRow(BmpConvertCtx* ctx) {
       ctx->bmpRow[x] = adjustPixel(gray);
     }
   } else if (ctx->oneBit) {
-    for (int x = 0; x < ctx->outWidth; x++) {
+    for (int step = 0; step < ctx->outWidth; ++step) {
+      const bool reverse = ctx->monoDitherer && ctx->monoDitherer->isReverseRow();
+      const int x = reverse ? ctx->outWidth - 1 - step : step;
       const uint8_t gray = (ctx->rowCount[x] > 0) ? (ctx->rowAccum[x] / ctx->rowCount[x]) : 0;
-      const uint8_t bit = ctx->atkinson1BitDitherer ? ctx->atkinson1BitDitherer->processPixel(gray, x)
-                                                    : quantize1bit(gray, x, ctx->currentOutY);
+      const uint8_t bit =
+          ctx->monoDitherer ? ctx->monoDitherer->processPixel(gray, x) : quantize1bit(gray, x, ctx->currentOutY);
       ctx->bmpRow[x / 8] |= (bit << (7 - (x % 8)));
     }
-    if (ctx->atkinson1BitDitherer) ctx->atkinson1BitDitherer->nextRow();
+    if (ctx->monoDitherer) ctx->monoDitherer->nextRow();
   } else {
-    for (int x = 0; x < ctx->outWidth; x++) {
+    for (int step = 0; step < ctx->outWidth; ++step) {
+      const bool reverse = ctx->fsDitherer && ctx->fsDitherer->isReverseRow();
+      const int x = reverse ? ctx->outWidth - 1 - step : step;
       const uint8_t gray = adjustPixel((ctx->rowCount[x] > 0) ? (ctx->rowAccum[x] / ctx->rowCount[x]) : 0);
       uint8_t twoBit;
       if (ctx->atkinsonDitherer) {
@@ -735,9 +743,9 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(FsFile& jpegFile, Print& bm
   }
 
   if (oneBit) {
-    ctx.atkinson1BitDitherer = makeUniqueNoThrow<Atkinson1BitDitherer>(outWidth);
-    if (!ctx.atkinson1BitDitherer || !ctx.atkinson1BitDitherer->isValid()) {
-      LOG_ERR("JPG", "OOM: Atkinson1BitDitherer");
+    ctx.monoDitherer = makeUniqueNoThrow<FloydSteinbergDitherer>(outWidth, true, true);
+    if (!ctx.monoDitherer || !ctx.monoDitherer->isValid()) {
+      LOG_ERR("JPG", "OOM: Floyd-Steinberg monochrome rows");
       return false;
     }
   } else if (!USE_8BIT_OUTPUT) {

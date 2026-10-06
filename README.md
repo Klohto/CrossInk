@@ -2,9 +2,19 @@
 
 This fork adds performance changes to [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk), based on CrossInk 1.6.1. Source changes and release versions are tracked here in Git.
 
-Download [1.6.1-2.0 for X3 (.bin)](https://github.com/Klohto/CrossInk/releases/download/1.6.1-2.0/crossink-1.6.1-2.0-x3.bin). The [changelog](CHANGELOG.md) explains both versions.
+Download [1.6.1-2.1 for X3 (.bin)](https://github.com/Klohto/CrossInk/releases/download/1.6.1-2.1/crossink-1.6.1-2.1-x3.bin). Read the [changelog](CHANGELOG.md) for each version.
 
 ## X3 release changes
+
+### 1.6.1-2.1
+
+- Prepared sleep covers appear before the reader saves progress and closes. A manual press shows temporary feedback when the cover still needs preparation. The final cover has no Sleeping badge.
+- Image conversion uses the diffusion selected from `05-diffused.bmp`: Floyd–Steinberg with alternating row direction. Gray image paths use four tones. Monochrome thumbnails and the PNG viewer use two tones with the same diffusion.
+- Settings firmware updates check the latest release in this fork. Version checks recognize the `1.6.1-2.x` suffix.
+
+Install this BIN once through Wi-Fi File Manager and SD Card Firmware Update. Later updates can use the firmware update check in Settings. New image cache names let covers and book images rebuild with the selected diffusion.
+
+[Full 2.1 changelog](CHANGELOG.md#161-21---2026-10-06) · [Work on hold](docs/backlog.md)
 
 ### 1.6.1-2.0
 

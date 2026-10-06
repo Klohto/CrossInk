@@ -1037,7 +1037,10 @@ void ActivityManager::goToSleep(bool fromTimeout) {
     // onExit() flushes progress, stats and bookmarks to the card.
     RenderLock lock;
     TouchRegistry::getInstance().clear();
-    if (sleepActivity) sleepActivity->onEnter();
+    if (sleepActivity) {
+      sleepActivity->onEnter();
+      LOG_DBG("SLP", "Sleep screen visible before reader cleanup");
+    }
     exitActivity(lock);
     while (!stackActivities.empty()) {
       stackActivities.back()->onExit();
@@ -1047,6 +1050,11 @@ void ActivityManager::goToSleep(bool fromTimeout) {
     pendingAction = PendingAction::None;
     currentActivity = std::move(sleepActivity);
     return;
+  }
+  if (sleepActivity) {
+    RenderLock lock;
+    sleepActivity->showPendingSleepFeedback();
+    LOG_DBG("SLP", "Sleep input feedback complete before reader cleanup");
   }
   replaceActivity(std::move(sleepActivity));
   loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns

@@ -3,6 +3,7 @@
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
+#include <ImageDitherBand.h>
 #include <JPEGDEC.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -43,10 +44,34 @@ struct JpegContext {
   int32_t fineScaleFPY{1 << 16};  // Y: src -> dst row mapping
   int32_t invScaleFPY{1 << 16};   // Y: dst -> src row mapping
 
+  ImageDitherBand diffusion;
   PixelCache cache;
   bool caching{false};
   uint32_t lastYieldMs{0};
 };
+
+void writeDiffusedJpegRow(JpegContext& ctx, int y, const uint8_t* levels, int width) {
+  const int outY = ctx.config->y + y;
+  DirectPixelWriter pixels;
+  pixels.init(*ctx.renderer);
+  pixels.beginRow(outY);
+  DirectCacheWriter cache;
+  if (ctx.caching) {
+    if (!ctx.cache.advanceTo(y))
+      ctx.caching = false;
+    else {
+      cache.init(ctx.cache.buffer, ctx.cache.bytesPerRow, ctx.cache.bandRows, ctx.cache.originX);
+      cache.beginRow(outY, ctx.config->y + ctx.cache.bandStart);
+    }
+  }
+  for (int x = 0; x < width; ++x) {
+    const int outX = ctx.config->x + x;
+    if (outY >= 0 && outY < ctx.screenHeight && outX >= 0 && outX < ctx.screenWidth) {
+      pixels.writePixel(outX, levels[x]);
+    }
+    if (ctx.caching) cache.writePixel(outX, levels[x]);
+  }
+}
 
 // File I/O callbacks use pFile->fHandle to access the FsFile*,
 // avoiding the need for global file state.
@@ -195,7 +220,7 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
   if (stride <= 0 || blockH <= 0 || validW <= 0) return 1;
 
   const bool useDithering = ctx->config->useDithering;
-  bool caching = ctx->caching;
+  bool caching = ctx->caching && !ctx->diffusion.valid();
   const int32_t fineScaleFPX = ctx->fineScaleFPX;
   const int32_t invScaleFPX = ctx->invScaleFPX;
   const int32_t fineScaleFPY = ctx->fineScaleFPY;
@@ -228,6 +253,11 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
 
   if (dstYStart >= dstYEnd || dstXStart >= dstXEnd) return 1;
 
+  if (ctx->diffusion.valid() && !ctx->diffusion.advanceTo(dstYStart, [&](int y, const uint8_t* row, int width) {
+        writeDiffusedJpegRow(*ctx, y, row, width);
+      }))
+    return 0;
+
   // Pre-compute orientation and render-mode state once per callback invocation
   DirectPixelWriter pw;
   pw.init(renderer);
@@ -259,15 +289,13 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
       for (int dstX = dstXStart; dstX < dstXEnd; dstX++) {
         const int outX = cfgX + dstX;
         uint8_t gray = row[dstX - blockX];
-        uint8_t dithered;
-        if (useDithering) {
-          dithered = applyBayerDither4Level(gray, outX, outY);
+        if (ctx->diffusion.valid()) {
+          if (!ctx->diffusion.put(dstX, dstY, gray)) return 0;
         } else {
-          dithered = gray / 85;
-          if (dithered > 3) dithered = 3;
+          const uint8_t level = useDithering ? applyBayerDither4Level(gray, outX, outY) : gray / 85;
+          pw.writePixel(outX, level);
+          if (caching) cw.writePixel(outX, level);
         }
-        pw.writePixel(outX, dithered);
-        if (caching) cw.writePixel(outX, dithered);
       }
     }
     return 1;
@@ -318,15 +346,13 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
         int bot = ((int)row1[lx0] * fxInv + (int)row1[lx1] * fx) >> FP_SHIFT;
         uint8_t gray = (uint8_t)((top * fyInv + bot * fy) >> FP_SHIFT);
 
-        uint8_t dithered;
-        if (useDithering) {
-          dithered = applyBayerDither4Level(gray, outX, outY);
+        if (ctx->diffusion.valid()) {
+          if (!ctx->diffusion.put(dstX, dstY, gray)) return 0;
         } else {
-          dithered = gray / 85;
-          if (dithered > 3) dithered = 3;
+          const uint8_t level = useDithering ? applyBayerDither4Level(gray, outX, outY) : gray / 85;
+          pw.writePixel(outX, level);
+          if (caching) cw.writePixel(outX, level);
         }
-        pw.writePixel(outX, dithered);
-        if (caching) cw.writePixel(outX, dithered);
       }
 
       // Interior (no X boundary checks — lx0 and lx0+1 guaranteed in bounds)
@@ -341,15 +367,13 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
         int bot = ((int)row1[lx0] * fxInv + (int)row1[lx0 + 1] * fx) >> FP_SHIFT;
         uint8_t gray = (uint8_t)((top * fyInv + bot * fy) >> FP_SHIFT);
 
-        uint8_t dithered;
-        if (useDithering) {
-          dithered = applyBayerDither4Level(gray, outX, outY);
+        if (ctx->diffusion.valid()) {
+          if (!ctx->diffusion.put(dstX, dstY, gray)) return 0;
         } else {
-          dithered = gray / 85;
-          if (dithered > 3) dithered = 3;
+          const uint8_t level = useDithering ? applyBayerDither4Level(gray, outX, outY) : gray / 85;
+          pw.writePixel(outX, level);
+          if (caching) cw.writePixel(outX, level);
         }
-        pw.writePixel(outX, dithered);
-        if (caching) cw.writePixel(outX, dithered);
       }
 
       // Right edge (with X boundary clamping)
@@ -367,15 +391,13 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
         int bot = ((int)row1[lx0] * fxInv + (int)row1[lx1] * fx) >> FP_SHIFT;
         uint8_t gray = (uint8_t)((top * fyInv + bot * fy) >> FP_SHIFT);
 
-        uint8_t dithered;
-        if (useDithering) {
-          dithered = applyBayerDither4Level(gray, outX, outY);
+        if (ctx->diffusion.valid()) {
+          if (!ctx->diffusion.put(dstX, dstY, gray)) return 0;
         } else {
-          dithered = gray / 85;
-          if (dithered > 3) dithered = 3;
+          const uint8_t level = useDithering ? applyBayerDither4Level(gray, outX, outY) : gray / 85;
+          pw.writePixel(outX, level);
+          if (caching) cw.writePixel(outX, level);
         }
-        pw.writePixel(outX, dithered);
-        if (caching) cw.writePixel(outX, dithered);
       }
     }
     return 1;
@@ -400,15 +422,13 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
       if (lx >= validW) lx = validW - 1;
       uint8_t gray = row[lx];
 
-      uint8_t dithered;
-      if (useDithering) {
-        dithered = applyBayerDither4Level(gray, outX, outY);
+      if (ctx->diffusion.valid()) {
+        if (!ctx->diffusion.put(dstX, dstY, gray)) return 0;
       } else {
-        dithered = gray / 85;
-        if (dithered > 3) dithered = 3;
+        const uint8_t level = useDithering ? applyBayerDither4Level(gray, outX, outY) : gray / 85;
+        pw.writePixel(outX, level);
+        if (caching) cw.writePixel(outX, level);
       }
-      pw.writePixel(outX, dithered);
-      if (caching) cw.writePixel(outX, dithered);
     }
   }
 
@@ -547,6 +567,12 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
     }
   }
 
+  if (config.useDithering) {
+    const int rows = static_cast<int>((static_cast<int64_t>(16) * ctx.fineScaleFPY) >> FP_SHIFT) + 2;
+    if (!ctx.diffusion.begin(destWidth, destHeight, rows, !config.useGrayscale)) {
+      LOG_ERR("JPG", "Cannot allocate diffusion rows; using the bounded fallback");
+    }
+  }
   ctx.lastYieldMs = millis();
   const uint32_t decodeStarted = millis();
   rc = jpeg->decode(0, 0, jpegScaleOption);
@@ -557,6 +583,11 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
     LOG_ERR("JPG", "Decode failed (rc=%d, lastError=%d)", rc, jpeg->getLastError());
     if (ctx.caching) ctx.cache.abort();
     return false;
+  }
+
+  if (ctx.diffusion.valid()) {
+    ctx.diffusion.advanceTo(destHeight,
+                            [&](int y, const uint8_t* row, int width) { writeDiffusedJpegRow(ctx, y, row, width); });
   }
 
   // Finalize the streamed cache file. Note: a flush failure mid-decode clears

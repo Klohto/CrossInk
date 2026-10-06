@@ -1,5 +1,6 @@
 #include "PngToFramebufferConverter.h"
 
+#include <BitmapHelpers.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -34,6 +35,7 @@ struct PngContext {
   int dstHeight{0};
   int lastDstY{-1};  // Track last rendered destination Y to avoid duplicates
 
+  std::unique_ptr<FloydSteinbergDitherer> diffusion;
   PixelCache cache;
   bool caching{false};
 
@@ -266,16 +268,18 @@ int pngDrawCallback(PNGDRAW* pDraw) {
       }
     }
 
-    int srcX = 0;
-    int error = 0;
-
-    for (int dstX = 0; dstX < dstWidth; dstX++) {
+    for (int step = 0; step < dstWidth; ++step) {
+      const int dstX = ctx->diffusion && ctx->diffusion->isReverseRow() ? dstWidth - 1 - step : step;
+      const int srcX = static_cast<int>(static_cast<int64_t>(dstX) * srcWidth / dstWidth);
       int outX = outXBase + dstX;
       if (outX >= 0 && outX < screenWidth) {
         uint8_t gray = ctx->grayLineBuffer[srcX];
 
         uint8_t ditheredGray;
-        if (useDithering) {
+        if (ctx->diffusion) {
+          ditheredGray = ctx->diffusion->processPixel(gray, dstX);
+          if (!ctx->config->useGrayscale) ditheredGray *= 3;
+        } else if (useDithering) {
           ditheredGray = applyBayerDither4Level(gray, outX, outY);
         } else {
           ditheredGray = quantizeGrayTo4Level(gray);
@@ -283,14 +287,8 @@ int pngDrawCallback(PNGDRAW* pDraw) {
         pw.writePixel(outX, ditheredGray);
         if (caching) cw.writePixel(outX, ditheredGray);
       }
-
-      // Bresenham-style stepping: advance srcX based on ratio srcWidth/dstWidth
-      error += srcWidth;
-      while (error >= dstWidth) {
-        error -= dstWidth;
-        srcX++;
-      }
     }
+    if (ctx->diffusion) ctx->diffusion->nextRow();
   }
 
   return 1;
@@ -439,6 +437,12 @@ bool PngToFramebufferConverter::decodeToFramebuffer(const std::string& imagePath
     }
   }
 
+  if (config.useDithering) {
+    // Two error rows use 4,240 bytes at X3 width and are reused throughout decode.
+    ctx.diffusion = makeUniqueNoThrow<FloydSteinbergDitherer>(ctx.dstWidth, true, !config.useGrayscale);
+    if (ctx.diffusion && !ctx.diffusion->isValid()) ctx.diffusion.reset();
+    if (!ctx.diffusion) LOG_ERR("PNG", "Cannot allocate diffusion rows; using the bounded fallback");
+  }
   ctx.lastYieldMs = millis();
   rc = png->decode(&ctx, 0);
 

@@ -75,7 +75,7 @@ class Bitmap {
   bool setDitheredOutputSize(int targetWidth, int targetHeight);
   int getWidth() const { return outputWidth; }
   int getHeight() const { return outputHeight; }
-  bool isTopDown() const { return topDown; }
+  bool isTopDown() const { return topDown || fsDitherer != nullptr; }
   bool hasGreyscale() const { return bpp > 1; }
   int getRowBytes() const { return rowBytes; }
   bool is1Bit() const { return bpp == 1; }

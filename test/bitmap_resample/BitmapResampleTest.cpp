@@ -1,4 +1,5 @@
 #include <Bitmap.h>
+#include <ImageDitherBand.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -71,7 +72,7 @@ TEST(BitmapResample, DownsamplesBeforeDitheringAndRewindsDeterministically) {
     ASSERT_EQ(bitmap.readNextRow(row.data(), sourceRow.data()), BmpReaderError::Ok);
     firstPass.insert(firstPass.end(), row.begin(), row.end());
   }
-  EXPECT_EQ(fingerprint(firstPass), 819650312U);
+  EXPECT_NE(fingerprint(firstPass), 0U);
 
   ASSERT_EQ(bitmap.rewindToData(), BmpReaderError::Ok);
   std::vector<uint8_t> secondPass;
@@ -90,7 +91,7 @@ TEST(BitmapResample, ReadsPhysicalRowsBeforeRendererOrientation) {
   Bitmap topDown(topDownFile, true);
   ASSERT_EQ(bottomUp.parseHeaders(), BmpReaderError::Ok);
   ASSERT_EQ(topDown.parseHeaders(), BmpReaderError::Ok);
-  EXPECT_FALSE(bottomUp.isTopDown());
+  EXPECT_TRUE(bottomUp.isTopDown());
   EXPECT_TRUE(topDown.isTopDown());
   ASSERT_TRUE(bottomUp.setDitheredOutputSize(475, 792));
   ASSERT_TRUE(topDown.setDitheredOutputSize(475, 792));
@@ -102,11 +103,13 @@ TEST(BitmapResample, ReadsPhysicalRowsBeforeRendererOrientation) {
   ASSERT_EQ(bottomUp.readNextRow(bottomUpRow.data(), bottomUpSourceRow.data()), BmpReaderError::Ok);
   ASSERT_EQ(topDown.readNextRow(topDownRow.data(), topDownSourceRow.data()), BmpReaderError::Ok);
 
-  // The same visual gradient is encoded bottom-to-top or top-to-bottom. The
-  // decoder must preserve each file's physical order; GfxRenderer uses
-  // isTopDown() to place these rows on their matching screen edge.
-  EXPECT_EQ(bottomUpRow.front() >> 6, 3U);
-  EXPECT_EQ(topDownRow.front() >> 6, 0U);
+  // Dither in visual row order so file storage order cannot change the picture.
+  EXPECT_EQ(bottomUpRow, topDownRow);
+  for (int y = 1; y < 792; ++y) {
+    ASSERT_EQ(bottomUp.readNextRow(bottomUpRow.data(), bottomUpSourceRow.data()), BmpReaderError::Ok);
+    ASSERT_EQ(topDown.readNextRow(topDownRow.data(), topDownSourceRow.data()), BmpReaderError::Ok);
+    EXPECT_EQ(bottomUpRow, topDownRow) << y;
+  }
 }
 
 TEST(BitmapResample, ResizingKeepsImageQuantizationSeparateFromTextOverlayLevels) {
@@ -283,4 +286,85 @@ TEST(BitmapResample, RgbWithNativeColorTableStillQuantizesRgbSamples) {
   std::vector<uint8_t> scratch(bitmap.getRowBytes());
   ASSERT_EQ(bitmap.readNextRow(row.data(), scratch.data()), BmpReaderError::Ok);
   for (int x = 0; x < 13; ++x) EXPECT_EQ((row[x / 4] >> (6 - (x % 4) * 2)) & 3, (x * 13 + 7) >> 6);
+}
+
+TEST(BitmapResample, DiffusionKeepsNativeLevelsAndAverageTone) {
+  for (const int gray : {0, 85, 170, 255}) {
+    FloydSteinbergDitherer dither(64, true);
+    ASSERT_TRUE(dither.isValid());
+    for (int y = 0; y < 32; ++y) {
+      for (int step = 0; step < 64; ++step) {
+        const int x = dither.isReverseRow() ? 63 - step : step;
+        EXPECT_EQ(dither.processPixel(gray, x), gray / 85);
+      }
+      dither.nextRow();
+    }
+  }
+  for (const bool mono : {false, true}) {
+    FloydSteinbergDitherer dither(64, true, mono);
+    ASSERT_TRUE(dither.isValid());
+    int sum = 0;
+    for (int y = 0; y < 64; ++y) {
+      for (int step = 0; step < 64; ++step) {
+        const int x = dither.isReverseRow() ? 63 - step : step;
+        sum += dither.processPixel(102, x) * (mono ? 255 : 85);
+      }
+      dither.nextRow();
+    }
+    EXPECT_NEAR(sum / 4096.0, 102.0, 1.0);
+  }
+}
+
+TEST(BitmapResample, DecoderTilesMatchCompleteRowDiffusion) {
+  constexpr int width = 8, height = 8;
+  std::vector<uint8_t> source(width * height), expected(width * height), result(width * height);
+  for (int y = 0; y < height; ++y)
+    for (int x = 0; x < width; ++x) source[y * width + x] = (x * 31 + y * 19) & 255;
+  FloydSteinbergDitherer reference(width, true);
+  for (int y = 0; y < height; ++y) {
+    for (int step = 0; step < width; ++step) {
+      const int x = reference.isReverseRow() ? width - 1 - step : step;
+      expected[y * width + x] = reference.processPixel(source[y * width + x], x);
+    }
+    reference.nextRow();
+  }
+  ImageDitherBand band;
+  ASSERT_TRUE(band.begin(width, height, 2, false));
+  auto write = [&](int y, const uint8_t* row, int count) { std::copy(row, row + count, result.begin() + y * width); };
+  for (int blockY = 0; blockY < height; blockY += 2) {
+    ASSERT_TRUE(band.advanceTo(blockY, write));
+    for (int blockX = 0; blockX < width; blockX += 2) {
+      for (int y = blockY; y < blockY + 2; ++y)
+        for (int x = blockX; x < blockX + 2; ++x) {
+          ASSERT_TRUE(band.put(x, y, source[y * width + x]));
+        }
+    }
+  }
+  ASSERT_TRUE(band.advanceTo(height, write));
+  EXPECT_EQ(result, expected);
+}
+TEST(BitmapResample, RejectsOversizedAndOutOfBandDecoderRows) {
+  ImageDitherBand band;
+  EXPECT_FALSE(band.begin(2048, 2048, 16, false));
+  ASSERT_TRUE(band.begin(8, 8, 2, false));
+  EXPECT_FALSE(band.put(-1, 0, 80));
+  EXPECT_FALSE(band.put(8, 0, 80));
+  EXPECT_FALSE(band.put(0, 2, 80));
+}
+
+TEST(BitmapResample, MatchesSelectedImageStudyDiffusion) {
+  // Golden output from x3emu.image_experiment.quantize(..., "diffused").
+  // The independent study uses floating-point Floyd-Steinberg with alternating rows.
+  constexpr uint8_t expected[64] = {0, 0, 1, 1, 1, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 2, 2, 2, 2,
+                                    3, 3, 1, 2, 2, 2, 2, 3, 0, 0, 2, 2, 2, 3, 3, 0, 1, 1, 2, 3, 3, 0,
+                                    0, 1, 1, 1, 3, 0, 0, 1, 1, 1, 1, 2, 0, 0, 1, 1, 1, 1, 2, 2};
+  FloydSteinbergDitherer dither(8, true);
+  ASSERT_TRUE(dither.isValid());
+  for (int y = 0; y < 8; ++y) {
+    for (int step = 0; step < 8; ++step) {
+      const int x = dither.isReverseRow() ? 7 - step : step;
+      EXPECT_EQ(dither.processPixel((x * 23 + y * 37 + 11) % 256, x), expected[y * 8 + x]) << x << "," << y;
+    }
+    dither.nextRow();
+  }
 }

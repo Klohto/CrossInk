@@ -235,127 +235,87 @@ class AtkinsonDitherer {
 //      7/16  X
 class FloydSteinbergDitherer {
  public:
-  explicit FloydSteinbergDitherer(int width, bool imageLevels = false) : imageLevels(imageLevels), rowCount(0) {
+  explicit FloydSteinbergDitherer(int width, bool imageLevels = true, bool monochrome = false)
+      : imageLevels(imageLevels), monochrome(monochrome) {
     if (width <= 0) return;
-    const size_t candidateRowSize = static_cast<size_t>(width) + 2;
-    if (candidateRowSize > SIZE_MAX / (2 * sizeof(int16_t))) return;
-    rowSize = candidateRowSize;
-    errorRows = makeUniqueNoThrow<int16_t[]>(rowSize * 2);
+    rowSize = static_cast<size_t>(width) + 2;
+    if (rowSize > SIZE_MAX / (2 * sizeof(int32_t))) return;
+    // Two reusable error rows use 4,240 bytes at X3 width; they exceed the task stack.
+    errorRows = makeUniqueNoThrow<int32_t[]>(rowSize * 2);
     if (!errorRows) return;
     errorCurRow = errorRows.get();
     errorNextRow = errorCurRow + rowSize;
+    reset();
   }
-
+  FloydSteinbergDitherer(const FloydSteinbergDitherer&) = delete;
+  FloydSteinbergDitherer& operator=(const FloydSteinbergDitherer&) = delete;
   bool isValid() const { return errorRows != nullptr; }
-
-  // **1. EXPLICITLY DELETE THE COPY CONSTRUCTOR**
-  FloydSteinbergDitherer(const FloydSteinbergDitherer& other) = delete;
-
-  // **2. EXPLICITLY DELETE THE COPY ASSIGNMENT OPERATOR**
-  FloydSteinbergDitherer& operator=(const FloydSteinbergDitherer& other) = delete;
-
-  // Process a single pixel and return quantized 2-bit value
-  // x is the logical x position (0 to width-1), direction handled internally
-  uint8_t processPixel(int gray, int x) {
-    // Add accumulated error to this pixel
-    int adjusted = gray + (isValid() ? errorCurRow[x + 1] : 0);
-
-    // Clamp to valid range
-    if (adjusted < 0) adjusted = 0;
-    if (adjusted > 255) adjusted = 255;
-
-    // Quantize to 4 levels (0, 85, 170, 255)
-    uint8_t quantized;
-    int quantizedValue;
-    if (imageLevels) {  // evenly spaced image tones
-      if (adjusted < 43) {
-        quantized = 0;
-        quantizedValue = 0;
-      } else if (adjusted < 128) {
-        quantized = 1;
-        quantizedValue = 85;
-      } else if (adjusted < 213) {
-        quantized = 2;
-        quantizedValue = 170;
-      } else {
-        quantized = 3;
-        quantizedValue = 255;
-      }
-    } else {  // fine-tuned to X4 eink display
-      if (adjusted < 30) {
-        quantized = 0;
-        quantizedValue = 15;
-      } else if (adjusted < 50) {
-        quantized = 1;
-        quantizedValue = 30;
-      } else if (adjusted < 140) {
-        quantized = 2;
-        quantizedValue = 80;
-      } else {
-        quantized = 3;
-        quantizedValue = 210;
-      }
-    }
-
-    if (!isValid()) return quantized;
-
-    // Calculate error
-    int error = adjusted - quantizedValue;
-
-    // Distribute error to neighbors (serpentine: direction-aware)
-    if (!isReverseRow()) {
-      // Left to right: standard distribution
-      // Right: 7/16
-      errorCurRow[x + 2] += (error * 7) >> 4;
-      // Bottom-left: 3/16
-      errorNextRow[x] += (error * 3) >> 4;
-      // Bottom: 5/16
-      errorNextRow[x + 1] += (error * 5) >> 4;
-      // Bottom-right: 1/16
-      errorNextRow[x + 2] += (error) >> 4;
-    } else {
-      // Right to left: mirrored distribution
-      // Left: 7/16
-      errorCurRow[x] += (error * 7) >> 4;
-      // Bottom-right: 3/16
-      errorNextRow[x + 2] += (error * 3) >> 4;
-      // Bottom: 5/16
-      errorNextRow[x + 1] += (error * 5) >> 4;
-      // Bottom-left: 1/16
-      errorNextRow[x] += (error) >> 4;
-    }
-
-    return quantized;
-  }
-
-  // Call at the end of each row to swap buffers
-  void nextRow() {
-    if (!isValid()) return;
-    // Swap buffers
-    int16_t* temp = errorCurRow;
-    errorCurRow = errorNextRow;
-    errorNextRow = temp;
-    // Clear the next row buffer
-    memset(errorNextRow, 0, rowSize * sizeof(int16_t));
-    rowCount++;
-  }
-
-  // Check if current row should be processed in reverse
   bool isReverseRow() const { return (rowCount & 1) != 0; }
 
-  // Reset for a new image or MCU block
+  uint8_t processPixel(int gray, int x) {
+    constexpr int unit = 1 << 16;
+    int adjusted = gray * unit + (isValid() ? errorCurRow[x + 1] : 0);
+    if (adjusted < 0) adjusted = 0;
+    if (adjusted > 255 * unit) adjusted = 255 * unit;
+    uint8_t level;
+    int value;
+    if (monochrome) {
+      level = adjusted >= 255 * unit / 2;
+      value = level * 255 * unit;
+    } else if (imageLevels) {
+      level = static_cast<uint8_t>((adjusted + 85 * unit / 2) / (85 * unit));
+      value = level * 85 * unit;
+    } else {
+      if (adjusted < 30 * unit) {
+        level = 0;
+        value = 15 * unit;
+      } else if (adjusted < 50 * unit) {
+        level = 1;
+        value = 30 * unit;
+      } else if (adjusted < 140 * unit) {
+        level = 2;
+        value = 80 * unit;
+      } else {
+        level = 3;
+        value = 210 * unit;
+      }
+    }
+    if (!isValid()) return level;
+    const int error = adjusted - value;
+    if (!isReverseRow()) {
+      errorCurRow[x + 2] += (error * 7) >> 4;
+      errorNextRow[x] += (error * 3) >> 4;
+      errorNextRow[x + 1] += (error * 5) >> 4;
+      errorNextRow[x + 2] += error >> 4;
+    } else {
+      errorCurRow[x] += (error * 7) >> 4;
+      errorNextRow[x + 2] += (error * 3) >> 4;
+      errorNextRow[x + 1] += (error * 5) >> 4;
+      errorNextRow[x] += error >> 4;
+    }
+    return level;
+  }
+  void nextRow() {
+    if (!isValid()) return;
+    auto* temp = errorCurRow;
+    errorCurRow = errorNextRow;
+    errorNextRow = temp;
+    std::memset(errorNextRow, 0, rowSize * sizeof(int32_t));
+    ++rowCount;
+  }
   void reset() {
     if (!isValid()) return;
-    memset(errorCurRow, 0, rowSize * sizeof(int16_t));
-    memset(errorNextRow, 0, rowSize * sizeof(int16_t));
+    std::memset(errorCurRow, 0, rowSize * sizeof(int32_t));
+    std::memset(errorNextRow, 0, rowSize * sizeof(int32_t));
     rowCount = 0;
   }
 
  private:
   const bool imageLevels;
-  int rowCount;
-  size_t rowSize{0};
-  std::unique_ptr<int16_t[]> errorRows;
-  int16_t* errorCurRow = nullptr;
-  int16_t* errorNextRow = nullptr;
+  const bool monochrome;
+  int rowCount = 0;
+  size_t rowSize = 0;
+  std::unique_ptr<int32_t[]> errorRows;
+  int32_t* errorCurRow = nullptr;
+  int32_t* errorNextRow = nullptr;
 };

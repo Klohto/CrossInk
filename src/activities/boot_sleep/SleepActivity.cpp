@@ -588,7 +588,20 @@ void SleepActivity::onEnter() {
   }
 }
 
+void SleepActivity::showPendingSleepFeedback() const {
+  const bool x3 = BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3 ||
+                  BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3Uc8279;
+  const auto mode = SETTINGS.sleepScreen;
+  if (!x3 || fromTimeout ||
+      (mode != CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM && mode != CrossPointSettings::SLEEP_SCREEN_MODE::COVER &&
+       mode != CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM))
+    return;
+  GUI.drawPopup(renderer, tr(STR_ENTERING_SLEEP));
+}
+
 bool SleepActivity::rendersBeforeExit() const {
+  const bool x3 = BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3 ||
+                  BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3Uc8279;
   if (fromTimeout &&
       SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT) {
     return false;
@@ -601,15 +614,19 @@ bool SleepActivity::rendersBeforeExit() const {
       // reader exits. Keep the previous order on other internal-RAM boards.
       return psramHeapAvailable() || BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3 ||
              BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3Uc8279;
-    case CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM:
-      return psramHeapAvailable();
+    case CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM: {
+      const auto heap = byteHeapSnapshot(MemoryPool::Internal);
+      return psramHeapAvailable() || (x3 && heap.free >= 48 * 1024 && heap.largest >= 20 * 1024);
+    }
     case CrossPointSettings::SLEEP_SCREEN_MODE::COVER:
     case CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM: {
-      // Image decode still needs the reader's internal heap on X3.
-      if (!psramHeapAvailable()) return false;
+      // A prepared native-tone BMP needs row scratch rather than an image decoder.
+      if (!psramHeapAvailable() && !x3) return false;
+      const auto heap = byteHeapSnapshot(MemoryPool::Internal);
+      if (!psramHeapAvailable() && (heap.free < 32 * 1024 || heap.largest < 8 * 1024)) return false;
       if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM &&
           !APP_STATE.lastSleepFromReader) {
-        return true;
+        return psramHeapAvailable() || (heap.free >= 48 * 1024 && heap.largest >= 20 * 1024);
       }
       const std::string& path = currentBookPath.empty() ? APP_STATE.openEpubPath : currentBookPath;
       if (path.empty()) return true;
@@ -778,7 +795,6 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
   }
 
   if (!hasGreyscale) {
-    drawSleepingLabel();
     renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
     return true;
   }
@@ -807,7 +823,6 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
       renderer.setRenderMode(GfxRenderer::BW);
       return false;
     }
-    if (absolute) drawSleepingLabel();
     if (mode == GfxRenderer::GRAYSCALE_LSB)
       renderer.copyGrayscaleLsbBuffers();
     else
@@ -816,18 +831,6 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
   renderer.displayGrayBuffer(TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
   renderer.setRenderMode(GfxRenderer::BW);
   return true;
-}
-
-void SleepActivity::drawSleepingLabel() const {
-  const char* const label = tr(STR_SLEEPING);
-  const int lineHeight = renderer.getLineHeight(SMALL_FONT_ID);
-  const int width = renderer.getTextWidth(SMALL_FONT_ID, label) + 20;
-  const int x = (renderer.getScreenWidth() - width) / 2;
-  const int y = renderer.getScreenHeight() - lineHeight - 24;
-  // Paint into the final frame, including both complete gray planes. The
-  // selected cover and the label appear in the same display activation.
-  renderer.fillRoundedRect(x, y, width, lineHeight + 12, 6, Color::White);
-  renderer.drawText(SMALL_FONT_ID, x + 10, y + 6, label);
 }
 
 void SleepActivity::renderCoverSleepScreen() const {

@@ -1,6 +1,8 @@
 # File Formats
 
 These formats describe the SD-card cache files under `/.crosspoint/epub_<hash>/`.
+
+Image diffusion in 1.6.1-2.1 uses a new filename identity: `cover_fs1*.bmp`, `thumb_fs1_<width>x<height>*.bmp`, and `<image>_fs1.pxc`. Old image results rebuild as they are used. BMP and local PXC binary layouts keep their existing format. The `fs1` identity selects Floyd–Steinberg diffusion with alternating row direction.
 All POD fields are written in the ESP32 little-endian representation used by
 `Serialization.h`; strings are length-prefixed UTF-8 unless a format notes a
 fixed-size char buffer.
@@ -22,6 +24,10 @@ EPUB layout cache formats. As with in-memory Back history, changing font or
 layout may shift the destination page.
 
 ## `/.crosspoint/home_carousel_cache_<index>.bin`
+
+### Version 9
+
+Version 9 in 1.6.1-2.1 rebuilds saved artwork after the image diffusion changes. Its header and framebuffer layout keep the version 6 structure. Versions 7 and 8 appeared in earlier development builds, so this change uses a fresh identifier.
 
 ### Version 6
 

@@ -14,7 +14,7 @@
 // 2-bit (4-level) grayscale. Images whose palette entries all map to native
 // gray levels (0, 85, 170, 255 ±21) are mapped directly without dithering.
 // For cover images, dithering is done in JpegToBmpConverter.cpp instead.
-constexpr bool USE_ATKINSON = true;  // Use Atkinson dithering instead of Floyd-Steinberg
+constexpr bool USE_ATKINSON = false;  // Use Atkinson dithering instead of Floyd-Steinberg
 // ============================================================================
 
 Bitmap::~Bitmap() {
@@ -215,21 +215,19 @@ BmpReaderError Bitmap::parseHeaders() {
 }
 
 bool Bitmap::setDitheredOutputSize(const int targetWidth, const int targetHeight) {
-  if (!dithering || !atkinsonDitherer || targetWidth <= 0 || targetHeight <= 0 || targetWidth > width ||
-      targetHeight > height || (targetWidth == width && targetHeight == height)) {
+  if (!dithering || (!atkinsonDitherer && !fsDitherer) || targetWidth <= 0 || targetHeight <= 0 ||
+      targetWidth > width || targetHeight > height || (targetWidth == width && targetHeight == height))
+    return false;
+  // Bitmap owns the replacement helper and its two row buffers (4,240 bytes at X3 width).
+  auto* resized = new (std::nothrow) FloydSteinbergDitherer(targetWidth, imageLevels);
+  if (!resized || !resized->isValid()) {
+    delete resized;
     return false;
   }
-
-  // The error buffers must use final-screen coordinates. Recreating this tiny
-  // helper costs about 3 KiB for an X3-wide custom sleep image, not a full BMP.
-  auto* resizedDitherer = new (std::nothrow) AtkinsonDitherer(targetWidth, imageLevels);
-  if (!resizedDitherer || !resizedDitherer->isValid()) {
-    delete resizedDitherer;
-    return false;
-  }
-
   delete atkinsonDitherer;
-  atkinsonDitherer = resizedDitherer;
+  atkinsonDitherer = nullptr;
+  delete fsDitherer;
+  fsDitherer = resized;
   outputWidth = targetWidth;
   outputHeight = targetHeight;
   return true;
@@ -246,14 +244,17 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer) const {
   const int sourceY = outputHeight == height
                           ? outputRowsRead
                           : std::min(height - 1, (outputRowsRead * height + height / 2) / outputHeight);
-  while (sourceRowsRead <= sourceY) {
+  if (fsDitherer && !topDown) {
+    const size_t position = bfOffBits + static_cast<size_t>(height - 1 - sourceY) * rowBytes;
+    if (!file.seek(position)) return BmpReaderError::SeekPixelDataFailed;
     if (file.read(rowBuffer, rowBytes) != rowBytes) return BmpReaderError::ShortReadRow;
-    sourceRowsRead++;
-  }
+  } else
+    while (sourceRowsRead <= sourceY) {
+      if (file.read(rowBuffer, rowBytes) != rowBytes) return BmpReaderError::ShortReadRow;
+      sourceRowsRead++;
+    }
 
-  uint8_t* outPtr = data;
-  uint8_t currentOutByte = 0;
-  int bitShift = 6;
+  std::memset(data, 0, (outputWidth + 3) / 4);
   const int outputY = outputRowsRead;
 
   // Helper lambda to pack 2bpp color into the output stream
@@ -273,18 +274,13 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer) const {
         color = quantize(adjustPixel(lum), outputX, outputY);
       }
     }
-    currentOutByte |= (color << bitShift);
-    if (bitShift == 0) {
-      *outPtr++ = currentOutByte;
-      currentOutByte = 0;
-      bitShift = 6;
-    } else {
-      bitShift -= 2;
-    }
+    data[outputX / 4] |= color << (6 - (outputX % 4) * 2);
   };
 
   const bool sameWidth = outputWidth == width;
-  for (int outputX = 0; outputX < outputWidth; outputX++) {
+  const bool reverse = fsDitherer && fsDitherer->isReverseRow();
+  for (int step = 0; step < outputWidth; step++) {
+    const int outputX = reverse ? outputWidth - 1 - step : step;
     const int sourceX = sameWidth ? outputX : std::min(width - 1, (outputX * width + width / 2) / outputWidth);
     uint8_t lum;
     switch (bpp) {
@@ -324,9 +320,6 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer) const {
     atkinsonDitherer->nextRow();
   else if (fsDitherer)
     fsDitherer->nextRow();
-
-  // Flush remaining bits if width is not a multiple of 4
-  if (bitShift != 6) *outPtr = currentOutByte;
 
   outputRowsRead++;
 
