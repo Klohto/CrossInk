@@ -1,8 +1,39 @@
-# CrossInk X3 performance
+# CrossInk for Xteink X3
 
-This fork tracks X3 performance work from [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk). The [performance record](PERFORMANCE.md) links the accepted source tags and daily-use checks. Download the app from the [v15 release](https://github.com/Klohto/CrossInk/releases/tag/x3-perf-v15).
+This fork adds performance changes to [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk), based on CrossInk 1.6.1. Source changes and release versions are tracked here in Git.
+
+Download [1.6.1-2.0 for X3 (.bin)](https://github.com/Klohto/CrossInk/releases/download/1.6.1-2.0/crossink-1.6.1-2.0-x3.bin). The [changelog](CHANGELOG.md) explains both versions.
+
+## X3 release changes
+
+### 1.6.1-2.0
+
+- Wake shows your saved reading page before fonts and book data finish loading.
+- The reader prepares up to twelve pages of layout ahead and keeps four text pages ahead as finished screen images on SD.
+- Completed chapter content is cached on SD for reuse after font or layout changes. The EPUB remains the source file.
+- Supported antialiased text can use one screen update. The full refresh schedule stays active.
+- Button input pauses optional preparation so navigation gets priority.
+- Hold Left or Right for 600 ms in Carousel to switch between books and the menu. Your book selection is kept.
+
+An EPUB can open at your page while chapter preparation continues. A `~` beside its page count means the count is still an estimate. Pages with images or special reader overlays use the existing drawing path.
+
+[Full 2.0 changelog](CHANGELOG.md#161-20---2026-10-06)
+
+### 1.6.1-1.0
+
+This is the accepted v16 build with its new version number.
+
+- EPUB text drawing and indexing do less repeated work. Small caps and raised or lowered text have improved smoothing.
+- Dark, light and blank sleep screens appear before reader cleanup finishes. Custom images include the Sleeping label in their final screen update.
+- BMP images open directly in gray, removing the initial dark frame. Closing the viewer also avoids an extra blank refresh.
+- Home shows its first screen before loading covers. Library combines quick cover results into fewer screen updates and reuses saved book metadata.
+- TXT and XTC drawing, button handling and saved settings use less repeated work.
+
+[Download 1.6.1-1.0 for X3 (.bin)](https://github.com/Klohto/CrossInk/releases/download/1.6.1-1.0/crossink-1.6.1-1.0-x3.bin) · [Full 1.0 changelog](CHANGELOG.md#161-10---2026-10-06)
 
 [File Manager folder uploads](docs/file-manager-folders.md) keep the folders from an unzipped image collection.
+
+The upstream project description and guides follow.
 
 > **This is a personal fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)** with a focus on improved fonts and minimal reading stats.
 
@@ -114,7 +145,7 @@ CrossInk runs on an ESP32-C3 with limited RAM, so very large folders or complex 
 
 The fastest way to install Crossink is by using Inky, Crossink's web companion app: https://inky.crossink.dev/#flash-tools
 
-Download a `firmware-*.bin` from the [releases page](https://github.com/uxjulia/CrossInk/releases), then flash it with the web installer or command line.
+Download the X3 `.bin` from [this fork’s releases](https://github.com/Klohto/CrossInk/releases), then flash it with the web installer or command line. The [upstream releases](https://github.com/uxjulia/CrossInk/releases) provide builds for the other supported devices.
 
 See [Installation](./docs/installation.md) for step-by-step flashing and revert instructions.
 
