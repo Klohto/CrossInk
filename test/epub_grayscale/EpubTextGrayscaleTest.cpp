@@ -5,9 +5,51 @@
 #include <TouchReaderPreviewModel.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 
 namespace {
+TEST(GlyphStripBounds, MatchesRotatedCornerReferenceAcrossBandsAndReversedBounds) {
+  fakeheap::reset(true);
+  HalDisplay display(64, 40);
+  GfxRenderer renderer(display);
+  renderer.begin();
+  std::array<uint8_t, 64 * 40 / 8> scratch{};
+  constexpr std::array<int, 9> coordinates{-48, -1, 0, 16, 39, 40, 63, 64, 120};
+  for (int orientation = 0; orientation < 4; ++orientation) {
+    renderer.setOrientation(GfxRenderer::Orientation(orientation));
+    EXPECT_TRUE(renderer.glyphIntersectsStrip(-48, -48, 120, 120));
+    EXPECT_TRUE(renderer.glyphIntersectsStrip(120, 120, -48, -48));
+    for (const auto [origin, rows] :
+         {std::pair{0, 40}, std::pair{0, 1}, std::pair{13, 7}, std::pair{39, 1}, std::pair{20, 20}}) {
+      SCOPED_TRACE(testing::Message() << orientation << ':' << origin << ':' << rows);
+      renderer.beginStripTarget(scratch.data(), origin, rows);
+      auto physicalY = [&](int x, int y) {
+        switch (orientation) {
+          case 0:
+            return 39 - x;
+          case 1:
+            return 39 - y;
+          case 2:
+            return x;
+          default:
+            return y;
+        }
+      };
+      for (int x0 : coordinates)
+        for (int y0 : coordinates)
+          for (int x1 : coordinates)
+            for (int y1 : coordinates) {
+              const int a = physicalY(x0, y0);
+              const int b = physicalY(x1, y1);
+              const bool expected = std::max(a, b) >= origin && std::min(a, b) < origin + rows;
+              EXPECT_EQ(renderer.glyphIntersectsStrip(x0, y0, x1, y1), expected);
+            }
+      renderer.endStripTarget();
+    }
+  }
+}
+
 // Deterministic 2-bit glyphs with negative bearings and descenders. Both the
 // built-in and real .cpfont loaders use these bytes, including RTL/CJK/marks.
 struct RasterFont {

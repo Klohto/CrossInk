@@ -130,6 +130,7 @@ class GfxRenderer {
   void freeBitmapScratchBuffers();
   bool ensureBitmapScratchBuffers(size_t outputRowSize, size_t rowBytesSize) const;
   bool bitmapScratchLockHeldByCurrentTask() const;
+  bool glyphIntersectsActiveStrip(int x0, int y0, int x1, int y1) const;
   template <Color color>
   void drawPixelDither(int x, int y) const;
   template <Color color>

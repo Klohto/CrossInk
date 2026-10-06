@@ -12,6 +12,7 @@
 - Skip ligature searches when the first character is outside the sorted table.
 - Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
 - Skip packed groups of four white glyph pixels. They leave every framebuffer plane alone.
+- Check glyph strip bounds with the physical Y extent. Keep inactive strip checks on their short return path.
 - Select packed glyph pixels with a constant table. Use a fixed decoder for each pixel depth across readers and menus.
 - Call navigation callbacks directly during each poll. Keep the press, hold and release order.
 - Inline the one-bit DEFLATE decoder used for compressed fonts and cached content.

@@ -2389,12 +2389,31 @@ bool GfxRenderer::glyphIntersectsStrip(int x0, int y0, int x1, int y1) const {
   if (!_stripActive) {
     return true;
   }
-  // Rotate the two opposite bbox corners to physical coords. For 90-degree
-  // orientations the physical bbox stays axis-aligned, so min/max of the two
-  // rotated corners' Y bounds the glyph's physical y-extent.
-  int ax, ay, bx, by;
-  rotateCoordinates(orientation, x0, y0, &ax, &ay, panelWidth, panelHeight);
-  rotateCoordinates(orientation, x1, y1, &bx, &by, panelWidth, panelHeight);
+  return glyphIntersectsActiveStrip(x0, y0, x1, y1);
+}
+
+// Keep the inactive strip path separate from the coordinate work.
+__attribute__((noinline)) bool GfxRenderer::glyphIntersectsActiveStrip(int x0, int y0, int x1, int y1) const {
+  // Strip culling needs only the physical Y extent of the two corners.
+  int ay, by;
+  switch (orientation) {
+    case Portrait:
+      ay = panelHeight - 1 - x0;
+      by = panelHeight - 1 - x1;
+      break;
+    case LandscapeClockwise:
+      ay = panelHeight - 1 - y0;
+      by = panelHeight - 1 - y1;
+      break;
+    case PortraitInverted:
+      ay = x0;
+      by = x1;
+      break;
+    case LandscapeCounterClockwise:
+      ay = y0;
+      by = y1;
+      break;
+  }
   const int minY = ay < by ? ay : by;
   const int maxY = ay > by ? ay : by;
   return !(maxY < _stripY0 || minY >= _stripY0 + _stripRows);
