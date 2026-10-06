@@ -32,6 +32,7 @@ class EpdFontFamily {
   const EpdFontData* getData(Style style = REGULAR) const;
   GlyphData findGlyphData(uint32_t cp, Style style = REGULAR) const;
   GlyphData getGlyphData(uint32_t cp, Style style = REGULAR) const;
+  GlyphData resolveGlyph(uint32_t& cp, Style style = REGULAR) const;
   const EpdGlyph* getGlyph(uint32_t cp, Style style = REGULAR) const;
   uint32_t getFallbackCodepoint(uint32_t cp, Style style = REGULAR) const;
   /// Returns true if the resolved style or shared fallback can render `cp`

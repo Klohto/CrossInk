@@ -106,6 +106,29 @@ TEST(UiSymbolFallback, PreservesNormalGlyphsAndMissingGlyphBehavior) {
   EXPECT_EQ(noFallback.getGlyphData(POWER).glyph, smallRegular.getGlyph(REPLACEMENT_GLYPH));
 }
 
+TEST(UiSymbolFallback, ResolvesTheSameCodepointAndFontAsSeparateLookups) {
+  const EpdFontFamily noFallback(&smallRegular);
+  EpdFontData emptyData{};
+  const EpdFont empty(&emptyData);
+  const EpdFontFamily emptyFamily(&empty);
+  for (const auto* family : {&small, &large, &noFallback, &emptyFamily}) {
+    for (unsigned flags = 0; flags < 256; ++flags) {
+      const auto style = static_cast<EpdFontFamily::Style>(flags);
+      for (const uint32_t sourceCp :
+           {0u,      32u,     65u,   0xA0u,   0x2BBu,  0x301u,  0x391u,  0x2003u,  0x200Bu,   0x2011u,
+            0x2018u, 0x2022u, POWER, 0x4E00u, 0xFB01u, 0xFE0Fu, 0xFFFDu, 0x1F4D6u, 0x110000u, 0xFFFFFFFFu}) {
+        const uint32_t expectedCp = family->getFallbackCodepoint(sourceCp, style);
+        const auto expected = family->findGlyphData(expectedCp, style);
+        uint32_t resolvedCp = sourceCp;
+        const auto resolved = family->resolveGlyph(resolvedCp, style);
+        EXPECT_EQ(resolvedCp, expectedCp);
+        EXPECT_EQ(resolved.fontData, expected.fontData);
+        EXPECT_EQ(resolved.glyph, expected.glyph);
+      }
+    }
+  }
+}
+
 TEST(UiSymbolFallback, TxtSearchKeepsBreaksWithProductionLigatureAndKerningMetrics) {
   const EpdFontData* fonts[] = {&inter_8_regular,       &inter_10_regular,      &inter_12_regular,
                                 &bitter_10_regular,     &bitter_12_regular,     &bitter_14_regular,

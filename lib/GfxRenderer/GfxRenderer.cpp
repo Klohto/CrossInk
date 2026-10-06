@@ -1191,8 +1191,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
     } else {
       cp = font.applyLigatures(cp, textCursor, style);
     }
-    cp = font.getFallbackCodepoint(cp, style);
-    const auto glyphData = font.findGlyphData(cp, style);
+    const auto glyphData = font.resolveGlyph(cp, style);
     const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     // Differential rounding: snap (previous advance + current kern) as one unit so
@@ -2914,8 +2913,7 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, const EpdFo
     } else {
       cp = font.applyLigatures(cp, text, style);
     }
-    cp = font.getFallbackCodepoint(cp, style);
-    const auto glyphData = font.findGlyphData(cp, style);
+    const auto glyphData = font.resolveGlyph(cp, style);
     const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     // Differential rounding: snap (previous advance + current kern) together,
@@ -3071,8 +3069,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
     }
 
     cp = font.applyLigatures(cp, text, style);
-    cp = font.getFallbackCodepoint(cp, style);
-    const auto glyphData = font.findGlyphData(cp, style);
+    const auto glyphData = font.resolveGlyph(cp, style);
     const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     // Differential rounding: snap (previous advance + current kern) as one unit,

@@ -58,10 +58,9 @@ void EpdFontFamily::getTextDimensions(const char* string, int* w, int* h, const 
 
     if (!isCombining) {
       cp = applyLigatures(cp, string, style);
-      cp = getFallbackCodepoint(cp, style);
     }
 
-    const GlyphData glyphData = findGlyphData(cp, style);
+    const GlyphData glyphData = isCombining ? findGlyphData(cp, style) : resolveGlyph(cp, style);
     const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     if (!isCombining && !hasRealGlyph && syntheticGlyph::isSpaceFallback(cp)) {
@@ -229,6 +228,33 @@ EpdFontFamily::GlyphData EpdFontFamily::getGlyphData(const uint32_t cp, const St
 
 const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style) const {
   return getGlyphData(cp, style).glyph;
+}
+
+EpdFontFamily::GlyphData EpdFontFamily::resolveGlyph(uint32_t& cp, const Style style) const {
+#if CROSSINK_SCALABLE_FONTS
+  // Keep the existing handler sequence for fonts that can load a glyph.
+  cp = getFallbackCodepoint(cp, style);
+  return findGlyphData(cp, style);
+#else
+  const GlyphData glyphData = findGlyphData(cp, style);
+  if (glyphData.glyph) return glyphData;
+
+  const uint32_t aliasCp = syntheticGlyph::aliasCodepoint(cp);
+  if (aliasCp != cp) {
+    const GlyphData aliasData = findGlyphData(aliasCp, style);
+    if (aliasData.glyph) {
+      cp = aliasCp;
+      return aliasData;
+    }
+  } else if (syntheticGlyph::isSpaceFallback(cp) || syntheticGlyph::isSolid(cp) ||
+             syntheticGlyph::isGreekFallback(cp)) {
+    return glyphData;
+  }
+
+  if (cp == REPLACEMENT_GLYPH) return glyphData;
+  cp = REPLACEMENT_GLYPH;
+  return findGlyphData(cp, style);
+#endif
 }
 
 uint32_t EpdFontFamily::getFallbackCodepoint(const uint32_t cp, const Style style) const {
