@@ -70,6 +70,8 @@ void draw2BitFontPixel(const GfxRenderer& renderer, const GfxRenderer::RenderMod
     renderer.drawPixel(x, y, false);
   } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && bmpVal == 1) {
     renderer.drawPixel(x, y, false);
+  } else if (renderMode == GfxRenderer::GRAYSCALE_LSB && bmpVal == 2 && renderer.isDualStripTargetActive()) {
+    renderer.drawGrayscaleMsbPixel(x, y);
   }
 }
 
@@ -739,7 +741,14 @@ static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMod
           }
         }
         if (maxRaw >= 2 || coverage >= 2) {
-          renderer.drawPixel(baseX + dstX, baseY + dstY, pixelState);
+          if (renderMode == GfxRenderer::BW) {
+            renderer.drawPixel(baseX + dstX, baseY + dstY, pixelState);
+          } else {
+            // Average the source area into the four available coverage levels.
+            // Keep the BW ink footprint so the overlay has a valid base.
+            const uint8_t raw = std::max<uint8_t>(1, (coverage + 2) / 4);
+            draw2BitFontPixel(renderer, renderMode, baseX + dstX, baseY + dstY, raw, pixelState);
+          }
         }
       }
     }
@@ -794,15 +803,28 @@ static void renderCharSmallCaps(const GfxRenderer& renderer, GfxRenderer::Render
         const int srcX = dstX * 4 / 3;
         const int srcXEnd = scaled75SourceEnd(dstX, srcW);
         uint8_t maxRaw = 0;
+        unsigned weightedCoverage = 0;
         for (int sampleY = srcY; sampleY < srcYEnd; sampleY++) {
           for (int sampleX = srcX; sampleX < srcXEnd; sampleX++) {
             const int pos = sampleY * srcW + sampleX;
             const uint8_t byte = bitmap[pos >> 2];
             const uint8_t raw = (byte >> ((3 - (pos & 3)) * 2)) & 0x3;
             if (raw > maxRaw) maxRaw = raw;
+            if (renderMode != GfxRenderer::BW) {
+              // A source pixel is three units wide; a destination pixel spans
+              // four. Use the overlap area instead of the darkest sample.
+              const int weightX = std::min((sampleX + 1) * 3, (dstX + 1) * 4) -
+                                  std::max(sampleX * 3, dstX * 4);
+              const int weightY = std::min((sampleY + 1) * 3, (dstY + 1) * 4) -
+                                  std::max(sampleY * 3, dstY * 4);
+              weightedCoverage += raw * weightX * weightY;
+            }
           }
         }
-        draw2BitFontPixel(renderer, renderMode, baseX + dstX, baseY + dstY, maxRaw, pixelState);
+        const uint8_t raw = renderMode == GfxRenderer::BW || maxRaw == 0
+                                ? maxRaw
+                                : std::max<unsigned>(1, (weightedCoverage + 8) / 16);
+        draw2BitFontPixel(renderer, renderMode, baseX + dstX, baseY + dstY, raw, pixelState);
       }
     }
   } else {
@@ -905,6 +927,10 @@ void GfxRenderer::drawGlyphBitmap(const uint8_t* bitmap, const int width, const 
                                    : mode == GRAYSCALE_MSB ? glyphBitmap::Plane::GrayMSB
                                                            : glyphBitmap::Plane::GrayLSB;
   glyphBitmap::draw(bitmap, width, height, twoBit, plane, state, target, clip);
+  if (_stripMsbBuf) {
+    target.buffer = _stripMsbBuf;
+    glyphBitmap::draw(bitmap, width, height, twoBit, glyphBitmap::Plane::GrayMSB, state, target, clip);
+  }
 }
 
 void GfxRenderer::drawMonoBitmap(const uint8_t* bitmap, const int width, const int height, const int x,
@@ -917,6 +943,10 @@ void GfxRenderer::drawMonoBitmap(const uint8_t* bitmap, const int width, const i
   glyphBitmap::Target target{getWriteTarget(), panelWidth, panelWidthBytes, getWriteOriginY(), getWriteRows(), {}};
   target.frame = rotateGlyphFrame(orientation, logical, panelWidth, panelHeight);
   monoBitmap::draw(bitmap, width, height, target, clip);
+  if (_stripMsbBuf) {
+    target.buffer = _stripMsbBuf;
+    monoBitmap::draw(bitmap, width, height, target, clip);
+  }
 }
 
 // IMPORTANT: This function is in critical rendering path and is called for every pixel. Please keep it as simple and
@@ -980,9 +1010,24 @@ void GfxRenderer::drawPixel(const int x, const int y, const bool state) const {
 
   if (state) {
     target[byteIndex] &= ~(1 << bitPosition);  // Clear bit
+    if (_stripMsbBuf) _stripMsbBuf[byteIndex] &= ~(1 << bitPosition);
   } else {
     target[byteIndex] |= 1 << bitPosition;  // Set bit
+    if (_stripMsbBuf) _stripMsbBuf[byteIndex] |= 1 << bitPosition;
   }
+}
+
+void GfxRenderer::drawGrayscaleMsbPixel(const int x, const int y) const {
+  assert(_stripMsbBuf != nullptr);
+  // Scaled glyphs can contain a light edge that belongs only in the MSB mask.
+  // Reuse the scalar clip/rotation path while directing this pixel to one plane.
+  uint8_t* const lsb = _stripBuf;
+  uint8_t* const msb = _stripMsbBuf;
+  _stripBuf = msb;
+  _stripMsbBuf = nullptr;
+  drawPixel(x, y, false);
+  _stripBuf = lsb;
+  _stripMsbBuf = msb;
 }
 
 namespace {
@@ -1521,6 +1566,17 @@ void GfxRenderer::fillRectImpl(const int x, const int y, const int width, const 
   if constexpr (C == Color::Clear) return;
   if (width <= 0 || height <= 0) return;
   if (fontCacheManager_ && fontCacheManager_->isScanning()) return;
+  if (_stripMsbBuf) {
+    uint8_t* const lsb = _stripBuf;
+    uint8_t* const msb = _stripMsbBuf;
+    _stripMsbBuf = nullptr;
+    fillRectImpl<C>(x, y, width, height);
+    _stripBuf = msb;
+    fillRectImpl<C>(x, y, width, height);
+    _stripBuf = lsb;
+    _stripMsbBuf = msb;
+    return;
+  }
 
   // Clip in logical space.
   const int screenW = getScreenWidth();
@@ -2353,6 +2409,7 @@ void GfxRenderer::clearScreen(const uint8_t color) const {
   if (_stripActive) {
     // Clear only the active band's scratch, not the shared framebuffer.
     memset(_stripBuf, color, static_cast<size_t>(panelWidthBytes) * _stripRows);
+    if (_stripMsbBuf) memset(_stripMsbBuf, color, static_cast<size_t>(panelWidthBytes) * _stripRows);
     return;
   }
   display.clearScreen(color);
@@ -2364,14 +2421,22 @@ void GfxRenderer::beginStripTarget(uint8_t* scratch, int stripY0, int stripRows)
   // the downstream uint16_t cast in writeGrayscalePlaneStrip.
   assert(scratch != nullptr && stripRows > 0 && stripY0 >= 0 && stripY0 <= static_cast<int>(panelHeight) - stripRows);
   _stripBuf = scratch;
+  _stripMsbBuf = nullptr;
   _stripY0 = stripY0;
   _stripRows = stripRows;
   _stripActive = true;
 }
 
+void GfxRenderer::beginDualStripTarget(uint8_t* lsb, uint8_t* msb, const int stripY0, const int stripRows) const {
+  assert(msb != nullptr && msb != lsb && renderMode == GRAYSCALE_LSB && !absoluteGrayPlanes);
+  beginStripTarget(lsb, stripY0, stripRows);
+  _stripMsbBuf = msb;
+}
+
 void GfxRenderer::endStripTarget() const {
   _stripActive = false;
   _stripBuf = nullptr;
+  _stripMsbBuf = nullptr;
   _stripY0 = 0;
   _stripRows = 0;
 }

@@ -55,7 +55,8 @@ bool runTiledGrayscalePass(GfxRenderer& renderer, const Page& page, const int fo
   const auto allocatePlane = [planeBytes, usePsramPlanes] {
     return usePsramPlanes ? makePsramByteBufferNoThrow(planeBytes) : makeHeapByteBufferNoThrow(planeBytes);
   };
-  auto lsbPlaneBuf = (asyncRefreshPending && planeBufferFits()) ? allocatePlane() : HeapByteBuffer{};
+  const bool wholePlaneAllowed = asyncRefreshPending || (needsTextGrayscale && !page.hasImages());
+  auto lsbPlaneBuf = (wholePlaneAllowed && planeBufferFits()) ? allocatePlane() : HeapByteBuffer{};
   auto msbPlaneBuf = (lsbPlaneBuf && planeBufferFits()) ? allocatePlane() : HeapByteBuffer{};
 
   if (lsbPlaneBuf) {
@@ -97,6 +98,32 @@ bool runTiledGrayscalePass(GfxRenderer& renderer, const Page& page, const int fo
       renderer.cleanupGrayscaleWithFrameBuffer();
     }
     return false;
+  }
+
+  // Text pages can produce both overlay masks during the same traversal. This
+  // reuses glyph lookup and shaping, with one additional 80-row scratch buffer.
+  // Retain the single-strip path when memory is low or the page has images.
+  const bool dualFits = needsTextGrayscale && !page.hasImages() &&
+                       (usePsramPlanes || ESP.getFreeHeap() >= requiredScratchSize + PLANE_BUFFER_FREE_HEAP_RESERVE) &&
+                       (usePsramPlanes || ESP.getMaxAllocHeap() >= requiredScratchSize + PLANE_BUFFER_MAX_ALLOC_RESERVE);
+  auto msbStrip = dualFits ? (usePsramPlanes ? makePsramByteBufferNoThrow(requiredScratchSize)
+                                           : makeHeapByteBufferNoThrow(requiredScratchSize))
+                          : HeapByteBuffer{};
+  if (msbStrip) {
+    renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+    for (int y = 0; y < displayHeight; y += GRAYSCALE_STRIP_ROWS) {
+      const int rows = std::min(GRAYSCALE_STRIP_ROWS, displayHeight - y);
+      renderer.beginDualStripTarget(scratch, msbStrip.get(), y, rows);
+      renderer.clearScreen(0x00);
+      page.render(renderer, fontId, marginLeft, marginTop, foregroundBlack);
+      renderer.endStripTarget();
+      renderer.writeGrayscalePlaneStrip(true, scratch, y, rows);
+      renderer.writeGrayscalePlaneStrip(false, msbStrip.get(), y, rows);
+    }
+    renderer.setRenderMode(GfxRenderer::BW);
+    renderer.displayGrayBuffer();
+    renderer.cleanupGrayscaleWithFrameBuffer();
+    return true;
   }
 
   // Keep the live BW framebuffer intact, stream grayscale planes by row-band,

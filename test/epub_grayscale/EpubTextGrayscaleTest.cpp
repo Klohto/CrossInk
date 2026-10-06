@@ -400,6 +400,73 @@ TEST(EpubTextRaster, VariationSelectorsDoNotDrawOrAdvance) {
   }
 }
 
+TEST(EpubTextGrayscaleTest, PairedStripsMatchSeparatePlanesForTextStylesAndShapes) {
+  for (bool sd : {false, true})
+    for (int orientation = 0; orientation < 4; ++orientation) {
+      fakeheap::reset(true);
+      Storage.reset();
+      RasterFont fixture(12);
+      SdCardFont sdFont;
+      HalDisplay display(792, 481);
+      GfxRenderer renderer(display);
+      renderer.begin();
+      if (sd) {
+        Storage.put("paired.cpfont", fixture.file());
+        ASSERT_TRUE(sdFont.load("paired.cpfont"));
+        renderer.insertFont(1, EpdFontFamily(sdFont.getEpdFont()));
+        renderer.registerSdCardFont(1, &sdFont);
+      } else {
+        renderer.insertFont(1, EpdFontFamily(&fixture.font));
+      }
+      renderer.setOrientation(GfxRenderer::Orientation(orientation));
+      FontCacheManager cache(renderer.getFontMap(), renderer.getSdCardFonts());
+      renderer.setFontCacheManager(&cache);
+      const uint8_t icon[] = {0x55, 0xAA, 0xF0};
+      const auto draw = [&] {
+        renderer.fillRect(12, 60, 30, 22, false);
+        renderer.fillRectDither(40, 75, 19, 21, Color::DarkGray);
+        renderer.drawLine(2, 82, 190, 82);
+        renderer.drawMonoBitmap(icon, 8, 3, 61, 79);
+        for (auto style : {EpdFontFamily::REGULAR, EpdFontFamily::SMALL_CAPS, EpdFontFamily::SUP,
+                           EpdFontFamily::SUB})
+          renderer.drawText(1, 5, 70 + static_cast<int>(style), "Abc e\u0301 שלום سلام", true, style);
+      };
+      {
+        auto scan = cache.createPrewarmScope();
+        draw();
+        scan.endScanAndPrewarm();
+      }
+      const auto bw = display.bw;
+      for (int origin : {0, 79, 160, 480}) {
+        const int rows = std::min(80, display.height - origin);
+        std::array<std::vector<uint8_t>, 2> expected;
+        for (int plane = 0; plane < 2; ++plane) {
+          expected[plane].resize(display.stride * rows);
+          renderer.setRenderMode(plane == 0 ? GfxRenderer::GRAYSCALE_LSB : GfxRenderer::GRAYSCALE_MSB);
+          renderer.beginStripTarget(expected[plane].data(), origin, rows);
+          renderer.clearScreen(0);
+          draw();
+          renderer.endStripTarget();
+        }
+        std::vector<uint8_t> low(display.stride * rows + 32, 0xA5), high = low;
+        renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+        renderer.beginDualStripTarget(low.data() + 16, high.data() + 16, origin, rows);
+        renderer.clearScreen(0);
+        draw();
+        renderer.endStripTarget();
+        EXPECT_EQ(std::vector<uint8_t>(low.begin() + 16, low.end() - 16), expected[0]);
+        EXPECT_EQ(std::vector<uint8_t>(high.begin() + 16, high.end() - 16), expected[1]);
+        for (const auto* buffer : {&low, &high}) {
+          EXPECT_TRUE(std::all_of(buffer->begin(), buffer->begin() + 16, [](auto b) { return b == 0xA5; }));
+          EXPECT_TRUE(std::all_of(buffer->end() - 16, buffer->end(), [](auto b) { return b == 0xA5; }));
+        }
+        EXPECT_EQ(display.bw, bw);
+        EXPECT_FALSE(renderer.isDualStripTargetActive());
+      }
+      renderer.setRenderMode(GfxRenderer::BW);
+    }
+}
+
 TEST(AbsoluteImageRaster, TextMatchesBlackWhiteInBothPlanesAndCancellationResetsMode) {
   fakeheap::reset(true);
   Storage.reset();

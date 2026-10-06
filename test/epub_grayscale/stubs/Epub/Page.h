@@ -11,6 +11,7 @@ class Page {
   };
   std::vector<PlacedImage> images;
   mutable int allVisits = 0, imageVisits = 0;
+  bool hasImages() const { return !images.empty(); }
   void renderImages(GfxRenderer& renderer, int, int x, int y) const {
     ++imageVisits;
     for (auto& item : images) item.image->render(renderer, x + item.x, y + item.y, true);

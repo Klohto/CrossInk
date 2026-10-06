@@ -2710,7 +2710,6 @@ void EpubReaderActivity::openReaderMenu() {
 void EpubReaderActivity::showBuildPopup() {
   if (!buildPopupPending || !renderer.hasFrameBuffer()) return;
   GUI.drawPopup(renderer, tr(STR_INDEXING));
-  renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   pagesUntilFullRefresh = 1;
   buildPopupPending = false;
 }
@@ -6026,8 +6025,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   const auto showIndexingPopup = [this]() {
     GUI.drawPopup(renderer, tr(STR_INDEXING));
-    renderer.displayBuffer(HalDisplay::FAST_REFRESH);
     pagesUntilFullRefresh = 1;
+    buildPopupPending = false;
   };
 
   bool buildCancelledForBack = false;

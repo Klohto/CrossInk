@@ -1,4 +1,5 @@
 #include <Epub/Page.h>
+#include <ArenaVector.h>
 #include <GfxRenderer.h>
 #include <gtest/gtest.h>
 
@@ -22,6 +23,50 @@ TEST(ParagraphIndentTest, DoesNotInventIndentWithoutSourceCss) {
   for (const bool extraParagraphSpacing : {false, true}) {
     ParsedText paragraph(extraParagraphSpacing);
     EXPECT_EQ(paragraph.resolveFirstLineIndent(true, renderer, 0), 0);
+  }
+}
+
+TEST(ParagraphWidthCacheTest, ReusesWordsAndKeepsStylesFocusAndPaddingIndependent) {
+  GfxRenderer renderer;
+  renderer.textAdvancePerChar = 2;
+  renderer.boldAdvancePerChar = 1;
+  ParsedText paragraph(false);
+  for (int i = 0; i < 90; ++i) {
+    const auto style = i % 3 == 1 ? EpdFontFamily::BOLD : EpdFontFamily::REGULAR;
+    paragraph.addWord("word", style);
+    paragraph.wordFocusBoundary.back() = i % 3 == 2 ? 2 : 0;
+    paragraph.inlinePaddings.push_back({static_cast<size_t>(i), static_cast<int16_t>(i % 5)});
+  }
+  Arena arena;
+  ASSERT_TRUE(arena.init(4096));
+  ArenaVector<uint16_t> widths(arena);
+  ASSERT_TRUE(paragraph.calculateWordWidths(widths, renderer, 1));
+  ASSERT_EQ(widths.size(), 90u);
+  for (size_t i = 0; i < widths.size(); ++i) {
+    const int baseWidth = i % 3 == 0 ? 8 : i % 3 == 1 ? 12 : 10;
+    EXPECT_EQ(widths[i], baseWidth + i % 5);
+  }
+  EXPECT_LT(renderer.textAdvanceCalls, 10u);
+}
+
+TEST(ParagraphWidthCacheTest, KeepsDistinctWordsAndAChangedFontIndependent) {
+  GfxRenderer renderer;
+  renderer.textAdvancePerChar = 2;
+  renderer.scalableBaseSize = 10;
+  ParsedText paragraph(false);
+  std::vector<uint16_t> expected;
+  for (int i = 0; i < 160; ++i) {
+    std::string word = i % 2 ? "repeat" : std::string(i % 47 + 1, 'a') + std::to_string(i);
+    expected.push_back(word.size() * 2);
+    paragraph.addWord(std::move(word), EpdFontFamily::REGULAR);
+  }
+  for (int fontId : {10, 20}) {
+    Arena arena;
+    ASSERT_TRUE(arena.init(4096));
+    ArenaVector<uint16_t> widths(arena);
+    ASSERT_TRUE(paragraph.calculateWordWidths(widths, renderer, fontId));
+    ASSERT_EQ(widths.size(), expected.size());
+    for (size_t i = 0; i < widths.size(); ++i) EXPECT_EQ(widths[i], expected[i] * fontId / 10);
   }
 }
 

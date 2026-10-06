@@ -541,10 +541,11 @@ void SleepActivity::onEnter() {
   overlayBackgroundBufferStored =
       sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::OVERLAY && renderer.storeBwBuffer();
 
-  // X4 Pro and X4 Classic share a panel that can retain this high-contrast
-  // transient update beneath the final OEM-style sleep refresh. Render only
-  // the final sleep frame on that panel family.
-  const bool showSleepPopup = !BoardConfig::isX4Pro() && !CROSSINK_APP_DEVICE_X4CLASSIC;
+  // X3 paints the final sleep frame directly. The X4 Pro/Classic panel family
+  // also keeps its existing single-refresh sleep sequence.
+  const bool x3 = BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3 ||
+                  BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3Uc8279;
+  const bool showSleepPopup = !x3 && !BoardConfig::isX4Pro() && !CROSSINK_APP_DEVICE_X4CLASSIC;
   // Show the popup in the orientation that was visible before reader exit restores
   // global settings. Reset to portrait afterwards so sleep screen layout stays unchanged.
   if (APP_STATE.lastSleepFromReader) {
@@ -588,9 +589,6 @@ void SleepActivity::onEnter() {
 }
 
 bool SleepActivity::rendersBeforeExit() const {
-  // Keep the reader's cleanup first on devices without PSRAM. Covers and custom
-  // images can otherwise compete with the reader for scarce internal memory.
-  if (!psramHeapAvailable()) return false;
   if (fromTimeout &&
       SETTINGS.quickResumeSleepScreen == CrossPointSettings::QUICK_RESUME_SLEEP_SCREEN::QUICK_RESUME_AFTER_TIMEOUT) {
     return false;
@@ -599,10 +597,16 @@ bool SleepActivity::rendersBeforeExit() const {
     case CrossPointSettings::SLEEP_SCREEN_MODE::DARK:
     case CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT:
     case CrossPointSettings::SLEEP_SCREEN_MODE::BLANK:
+      // X3 can paint these screens from its existing framebuffer before the
+      // reader exits. Keep the previous order on other internal-RAM boards.
+      return psramHeapAvailable() || BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3 ||
+             BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3Uc8279;
     case CrossPointSettings::SLEEP_SCREEN_MODE::CUSTOM:
-      return true;
+      return psramHeapAvailable();
     case CrossPointSettings::SLEEP_SCREEN_MODE::COVER:
     case CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM: {
+      // Image decode still needs the reader's internal heap on X3.
+      if (!psramHeapAvailable()) return false;
       if (SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::COVER_CUSTOM &&
           !APP_STATE.lastSleepFromReader) {
         return true;
@@ -774,6 +778,7 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
   }
 
   if (!hasGreyscale) {
+    drawSleepingLabel();
     renderer.displayBuffer(HalDisplay::HALF_REFRESH, TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
     return true;
   }
@@ -802,6 +807,7 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
       renderer.setRenderMode(GfxRenderer::BW);
       return false;
     }
+    if (absolute) drawSleepingLabel();
     if (mode == GfxRenderer::GRAYSCALE_LSB)
       renderer.copyGrayscaleLsbBuffers();
     else
@@ -810,6 +816,18 @@ bool SleepActivity::renderBitmapSleepScreen(Bitmap& bitmap) const {
   renderer.displayGrayBuffer(TURN_OFF_SCREEN_AFTER_SLEEP_REFRESH);
   renderer.setRenderMode(GfxRenderer::BW);
   return true;
+}
+
+void SleepActivity::drawSleepingLabel() const {
+  const char* const label = tr(STR_SLEEPING);
+  const int lineHeight = renderer.getLineHeight(SMALL_FONT_ID);
+  const int width = renderer.getTextWidth(SMALL_FONT_ID, label) + 20;
+  const int x = (renderer.getScreenWidth() - width) / 2;
+  const int y = renderer.getScreenHeight() - lineHeight - 24;
+  // Paint into the final frame, including both complete gray planes. The
+  // selected cover and the label appear in the same display activation.
+  renderer.fillRoundedRect(x, y, width, lineHeight + 12, 6, Color::White);
+  renderer.drawText(SMALL_FONT_ID, x + 10, y + 6, label);
 }
 
 void SleepActivity::renderCoverSleepScreen() const {

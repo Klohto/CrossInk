@@ -8,6 +8,7 @@
 #include <Utf8.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -1060,9 +1061,35 @@ bool ParsedText::calculateWordWidths(ArenaVector<uint16_t>& wordWidths, const Gf
     return false;
   }
 
+  struct CachedWidth {
+    const std::string* word = nullptr;
+    uint16_t width = 0;
+    EpdFontFamily::Style style = EpdFontFamily::REGULAR;
+    uint8_t focusBoundary = 0;
+  };
+  // The font and layout remain fixed during this call. Repeated short words
+  // can reuse their advance without more glyph or kerning lookups. Exact text
+  // and style checks protect hash collisions; padding stays position-specific.
+  std::array<CachedWidth, 32> cache{};
   for (size_t i = 0; i < words.size(); ++i) {
-    const int width =
-        measureTokenWidth(renderer, fontId, words[i], wordStyles[i], wordFocusBoundary[i]) + inlinePaddingBefore(i);
+    const auto& word = words[i];
+    uint16_t tokenWidth;
+    if (word.size() <= 24) {
+      uint32_t hash = 2166136261u;
+      for (const unsigned char byte : word) hash = (hash ^ byte) * 16777619u;
+      hash = (hash ^ static_cast<uint8_t>(wordStyles[i])) * 16777619u;
+      auto& entry = cache[(hash ^ wordFocusBoundary[i]) & (cache.size() - 1)];
+      if (entry.word && entry.style == wordStyles[i] && entry.focusBoundary == wordFocusBoundary[i] &&
+          *entry.word == word) {
+        tokenWidth = entry.width;
+      } else {
+        tokenWidth = measureTokenWidth(renderer, fontId, word, wordStyles[i], wordFocusBoundary[i]);
+        entry = {&word, tokenWidth, wordStyles[i], wordFocusBoundary[i]};
+      }
+    } else {
+      tokenWidth = measureTokenWidth(renderer, fontId, word, wordStyles[i], wordFocusBoundary[i]);
+    }
+    const int width = tokenWidth + inlinePaddingBefore(i);
     if (!wordWidths.push_back(static_cast<uint16_t>(std::min(width, static_cast<int>(UINT16_MAX))))) {
       return false;
     }

@@ -247,6 +247,10 @@ TEST_F(EpubGrayscaleTest, PlanePathsProduceIdenticalBytesAndRestoreBw) {
       for (int path = 0; path < 4; ++path) {
         ImageBlock::releaseSessionPixelCache();
         fakeheap::reset(path != 0);
+        if (path == 0) {
+          fakeheap::internal.free = 100000;
+          fakeheap::internal.largest = 60000;
+        }
         GfxRenderer r;
         r.orientation = GfxRenderer::Orientation(orientation);
         // Strips only, first allocation failure, second allocation failure, two planes.
@@ -284,6 +288,37 @@ TEST_F(EpubGrayscaleTest, PlanePathsProduceIdenticalBytesAndRestoreBw) {
         EXPECT_EQ(r.events, expected);
       }
     }
+}
+
+TEST_F(EpubGrayscaleTest, TextPairsBandsWithBoundedHeapAndFallsBackOnAllocationFailure) {
+  for (int failure : {0, 1, 2}) {
+    fakeheap::reset(false);
+    fakeheap::internal.free = failure == 2 ? 65000 : 100000;
+    fakeheap::internal.largest = 60000;
+    fakeheap::internal.fail = failure == 1;
+    GfxRenderer r;
+    Page page;
+    std::vector<uint8_t> scratch(r.stride * 80);
+    const auto live = r.bw;
+    ASSERT_TRUE(EpubGrayscale::runTiledGrayscalePass(r, page, 1, 0, 0, true, true, false,
+                                                   scratch.data(), scratch.size(), false));
+    EXPECT_EQ(page.allVisits, failure == 0 ? 7 : 14);
+    EXPECT_EQ(r.bw, live);
+    EXPECT_TRUE(fakeheap::live.empty());
+    EXPECT_EQ(r.events[r.events.size() - 2], "gray");
+    EXPECT_EQ(r.events.back(), "cleanup");
+    EXPECT_FALSE(r.active);
+    EXPECT_EQ(r.mode, GfxRenderer::BW);
+  }
+}
+
+TEST_F(EpubGrayscaleTest, CleanupPassCanUseWholePlanesWithoutAnAsyncBase) {
+  fakeheap::reset(true);
+  GfxRenderer r;
+  Page page;
+  ASSERT_TRUE(EpubGrayscale::runTiledGrayscalePass(r, page, 1, 0, 0, true, true, false, nullptr, 0, false));
+  EXPECT_EQ(page.allVisits, 2);
+  EXPECT_EQ(r.events, (std::vector<std::string>{"wait", "lsb", "msb", "gray", "cleanup"}));
 }
 
 TEST_F(EpubGrayscaleTest, MissingScratchAndUnsupportedPathsPreserveFallbackContract) {

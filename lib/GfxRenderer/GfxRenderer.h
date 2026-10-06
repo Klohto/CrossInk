@@ -72,6 +72,7 @@ class GfxRenderer {
   // operate on a caller-owned scratch holding one horizontal band of physical
   // rows [_stripY0, _stripY0 + _stripRows) instead of the shared framebuffer.
   mutable uint8_t* _stripBuf = nullptr;
+  mutable uint8_t* _stripMsbBuf = nullptr;
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
@@ -236,9 +237,11 @@ class GfxRenderer {
   void getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const;
 
   void beginStripTarget(uint8_t* scratch, int stripY0, int stripRows) const;
+  void beginDualStripTarget(uint8_t* lsb, uint8_t* msb, int stripY0, int stripRows) const;
   void endStripTarget() const;
   bool glyphIntersectsStrip(int x0, int y0, int x1, int y1) const;
   bool isStripTargetActive() const { return _stripActive; }
+  bool isDualStripTargetActive() const { return _stripMsbBuf != nullptr; }
   uint8_t* getWriteTarget() const { return _stripActive ? _stripBuf : frameBuffer; }
   int getWriteOriginY() const { return _stripActive ? _stripY0 : 0; }
   int getWriteRows() const { return _stripActive ? _stripRows : panelHeight; }
@@ -246,6 +249,7 @@ class GfxRenderer {
   // Drawing
   bool isPixelBlack(int x, int y) const;
   void drawPixel(int x, int y, bool state = true) const;
+  void drawGrayscaleMsbPixel(int x, int y) const;
   // Byte-padded rows, MSB first, zero is black. White leaves the buffer alone.
   void drawMonoBitmap(const uint8_t* bitmap, int width, int height, int x = 0, int y = 0) const;
   // Unscaled glyphs share one clipped, orientation-aware rasterizer.

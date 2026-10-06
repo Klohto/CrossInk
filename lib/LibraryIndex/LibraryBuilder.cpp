@@ -410,7 +410,21 @@ class PriorTable {
     }
     // Equal keys can begin in the block before the first block that starts at
     // or after the key.
-    for (uint32_t at = (lo == 0 ? 0 : lo - 1) * blockEntries; at < count; at++) {
+    const uint32_t first = (lo == 0 ? 0 : lo - 1) * blockEntries;
+    uint32_t blockLo = first;
+    uint32_t blockHi = std::min<uint32_t>(count, first + blockEntries);
+    // The fence selects one cached block. Locate its first possible match
+    // without reading and comparing every earlier entry in that block.
+    while (blockLo < blockHi) {
+      const uint32_t mid = blockLo + (blockHi - blockLo) / 2;
+      SortEntry entry{};
+      if (!entryAt(mid, entry)) return false;
+      if (memcmp(entry.key, key, SORT_SEGMENT_BYTES) < 0)
+        blockLo = mid + 1;
+      else
+        blockHi = mid;
+    }
+    for (uint32_t at = blockLo; at < count; at++) {
       SortEntry entry{};
       if (!entryAt(at, entry)) return false;
       const int cmp = memcmp(entry.key, key, SORT_SEGMENT_BYTES);

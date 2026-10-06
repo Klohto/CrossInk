@@ -20,6 +20,7 @@ class GfxRenderer {
   bool supported = true, inverted = false, active = false;
   int origin = 0, rows = 0, placeholders = 0;
   uint8_t* target = nullptr;
+  uint8_t* msbTarget = nullptr;
   std::vector<uint8_t> bw, lsb, msb;
   std::vector<std::string> events;
   FontCacheManager fonts;
@@ -49,9 +50,17 @@ class GfxRenderer {
     assert(active);
     active = false;
     target = nullptr;
+    msbTarget = nullptr;
     origin = rows = 0;
   }
-  void clearScreen(uint8_t c) { memset(getWriteTarget(), c, size_t(stride) * getWriteRows()); }
+  void beginDualStripTarget(uint8_t* low, uint8_t* high, int y, int count) {
+    beginStripTarget(low, y, count);
+    msbTarget = high;
+  }
+  void clearScreen(uint8_t c) {
+    memset(getWriteTarget(), c, size_t(stride) * getWriteRows());
+    if (msbTarget) memset(msbTarget, c, size_t(stride) * getWriteRows());
+  }
   void waitRefreshComplete() { events.push_back("wait"); }
   void writeGrayscalePlaneStrip(bool low, const uint8_t* p, int y, int count) {
     assert(!active);
