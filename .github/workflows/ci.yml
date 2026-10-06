@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   clang-format:
+    if: github.repository == 'uxjulia/CrossInk'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -39,6 +40,7 @@ jobs:
           git diff --exit-code || (echo "Please run 'bin/clang-format-fix' to fix formatting issues" && exit 1)
 
   cppcheck:
+    if: github.repository == 'uxjulia/CrossInk'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -74,7 +76,7 @@ jobs:
   build:
     # Firmware artifacts are validated on pull requests; release builds stay
     # in the dedicated release workflow.
-    if: github.event_name == 'pull_request'
+    if: github.repository == 'uxjulia/CrossInk' && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

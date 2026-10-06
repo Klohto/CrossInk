@@ -1,0 +1,30 @@
+{
+  "iteration": 15,
+  "status": "accepted",
+  "upstream_base": "9914146eeae7b46b300f475a16c32426fc02ec1f",
+  "source_tree": "58c54a1afc89a7d6cef903745096d57ce5f7ee84",
+  "source_commit": "33b50c467d730494f2709d3d099fcecd3dc0853a",
+  "sdk_commit": "699370183fa3a0e33c9cb83a36f701bbb6022095",
+  "image_hashes": {
+    "firmware.bin": "50dee4643e530f4a443049f10823b9985cdfdf3449e9071a6a6afe32ddb55fd6",
+    "firmware.elf": "0bd91d87e2dff33c2adf41c00c221fce3f6d47efadf990dcd59ff8cf239d1409",
+    "full-flash.bin": "7a98e1104792decd7bc6f18bebb7d42d6289f6102716f6b646dbb88d2df00cc9"
+  },
+  "host_checks": 949,
+  "deferred_png_checks": 18,
+  "asan_ubsan_bidi_checks": 32,
+  "classifier_comparisons": 2114116,
+  "native_screen_states": 58,
+  "native_output": "All states match v14 in pixels, capture hashes, refresh count and panel data.",
+  "daily_workflow": "EPUB open, reading, page turns, lock and wake to the saved page, repeated lock.",
+  "ascii_classifier_own_instruction_reduction_percent": 90.7,
+  "static_ram_bytes": 64904,
+  "app_bytes": 6314336,
+  "app_free_bytes": 239264,
+  "user_device_report": "The user flashed v15 to an X3 and reported that it looks great.",
+  "limits": [
+    "The headline instruction metric covers bidi_class on the fixed Latin EPUB fixture.",
+    "The native backend has uncalibrated CPU, storage and panel costs.",
+    "Full source body reviews and unmeasured settings remain open."
+  ]
+}
