@@ -1,0 +1,3 @@
+add_executable(mono_bitmap_tests MonoBitmapTest.cpp)
+target_link_libraries(mono_bitmap_tests PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(mono_bitmap_tests)

@@ -2,6 +2,11 @@
 #include <PersistableStore.h>
 #include <gtest/gtest.h>
 
+#include <array>
+#include <atomic>
+#include <thread>
+#include <vector>
+
 namespace {
 constexpr char STORE_PATH[] = "/.crosspoint/recent.json";
 
@@ -29,12 +34,53 @@ class CachedStore : public PersistableStore<CachedStore> {
     return writeDocIfChanged(STORE_PATH, doc, true);
   }
 };
+
+class ParallelStore : public PersistableStore<ParallelStore> {
+ public:
+  inline static std::atomic<int> constructions{0};
+  std::array<unsigned, 128> values;
+
+  ParallelStore() {
+    constructions.fetch_add(1);
+    for (unsigned i = 0; i < values.size(); ++i) values[i] = i * 17 + 3;
+  }
+};
 }  // namespace
 
 class PersistableStoreAtomicTest : public testing::Test {
  protected:
   void SetUp() override { Storage.reset(); }
 };
+
+TEST(PersistableStoreSingletonTest, ConcurrentFirstReadersSeeOneCompleteObject) {
+  constexpr size_t workers = 32;
+  std::array<ParallelStore*, workers> addresses{};
+  std::atomic<size_t> waiting{0};
+  std::atomic<bool> start{false};
+  std::atomic<size_t> incomplete{0};
+  std::vector<std::thread> threads;
+  for (size_t worker = 0; worker < workers; ++worker) {
+    threads.emplace_back([&, worker] {
+      waiting.fetch_add(1);
+      while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+      for (unsigned pass = 0; pass < 1000; ++pass) {
+        auto& store = ParallelStore::getInstance();
+        addresses[worker] = &store;
+        for (unsigned i = 0; i < store.values.size(); ++i) {
+          if (store.values[i] != i * 17 + 3) incomplete.fetch_add(1);
+        }
+      }
+    });
+  }
+  while (waiting.load() != workers) std::this_thread::yield();
+  start.store(true, std::memory_order_release);
+  for (auto& thread : threads) thread.join();
+  EXPECT_EQ(ParallelStore::constructions.load(), 1);
+  EXPECT_EQ(incomplete.load(), 0u);
+  for (auto* address : addresses) EXPECT_EQ(address, addresses[0]);
+  EXPECT_EQ(&ParallelStore::getInstance(), addresses[0]);
+  EXPECT_NE(static_cast<void*>(&CachedStore::getInstance()), static_cast<void*>(addresses[0]));
+}
 
 TEST_F(PersistableStoreAtomicTest, RestoresOriginalWhenReplacementRenameFails) {
   ASSERT_TRUE(PersistableStoreBase::writeDocToFile(STORE_PATH, documentWithPath("/old.epub")));

@@ -16,6 +16,7 @@
 #include <cmath>
 
 #include "BitmapRow.h"
+#include "MonoBitmap.h"
 #include "FontCacheManager.h"
 #include "GlyphBitmap.h"
 
@@ -897,6 +898,26 @@ void GfxRenderer::drawGlyphBitmap(const uint8_t* bitmap, const int width, const 
                                    : mode == GRAYSCALE_MSB ? glyphBitmap::Plane::GrayMSB
                                                            : glyphBitmap::Plane::GrayLSB;
   glyphBitmap::draw(bitmap, width, height, twoBit, plane, state, target, clip);
+}
+
+void GfxRenderer::drawMonoBitmap(const uint8_t* bitmap, const int width, const int height, const int x,
+                                 const int y) const {
+  const glyphBitmap::Frame logical{x, y, 1, 0, 0, 1};
+  glyphBitmap::Clip clip{0, 0, width, height};
+  if (textClipActive_) {
+    glyphBitmap::clipToRect(logical, textClipLeft_, textClipTop_, textClipRight_, textClipBottom_, clip);
+  }
+  glyphBitmap::Target target{getWriteTarget(), panelWidth, panelWidthBytes, getWriteOriginY(), getWriteRows(), {}};
+  auto& physical = target.frame;
+  rotateCoordinates(orientation, x, y, &physical.x, &physical.y, panelWidth, panelHeight);
+  int nextX, nextY;
+  rotateCoordinates(orientation, x + 1, y, &nextX, &nextY, panelWidth, panelHeight);
+  physical.dxX = nextX - physical.x;
+  physical.dxY = nextY - physical.y;
+  rotateCoordinates(orientation, x, y + 1, &nextX, &nextY, panelWidth, panelHeight);
+  physical.dyX = nextX - physical.x;
+  physical.dyY = nextY - physical.y;
+  monoBitmap::draw(bitmap, width, height, target, clip);
 }
 
 // IMPORTANT: This function is in critical rendering path and is called for every pixel. Please keep it as simple and

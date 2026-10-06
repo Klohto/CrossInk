@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <Logging.h>
 
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -113,7 +114,12 @@ class PersistableStore : public PersistableStoreBase {
   }
 
   static T& getInstance() {
+    // ESP32-C3 calls the runtime guard on each access to a local singleton.
+    // Publish the completed object once. Later reads need one atomic load.
+    static std::atomic<T*> ready{nullptr};
+    if (T* cached = ready.load(std::memory_order_acquire)) return *cached;
     static T instance;
+    ready.store(&instance, std::memory_order_release);
     return instance;
   }
 

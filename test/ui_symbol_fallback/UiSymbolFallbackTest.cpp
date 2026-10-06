@@ -35,6 +35,30 @@ TEST(UiSymbolFallback, ContainsExactlyOneGlyph) {
   EXPECT_FALSE(symbols.hasCodepoint('A'));
 }
 
+TEST(UiSymbolFallback, FirstIntervalLookupKeepsGapsAndOverlappingBoundaryChoice) {
+  const EpdGlyph glyphs[14]{};
+  const EpdUnicodeInterval intervals[] = {{10, 15, 0}, {15, 20, 6}, {30, 31, 12}};
+  EpdFontData data{};
+  data.glyph = glyphs;
+  data.intervals = intervals;
+  data.intervalCount = 3;
+  const EpdFont font(&data);
+  EXPECT_EQ(font.findGlyph(9), nullptr);
+  EXPECT_EQ(font.findGlyph(10), &glyphs[0]);
+  EXPECT_EQ(font.findGlyph(14), &glyphs[4]);
+  EXPECT_EQ(font.findGlyph(15), &glyphs[6]);
+  EXPECT_EQ(font.findGlyph(20), &glyphs[11]);
+  EXPECT_EQ(font.findGlyph(21), nullptr);
+  EXPECT_EQ(font.findGlyph(30), &glyphs[12]);
+  EXPECT_EQ(font.findGlyph(31), &glyphs[13]);
+  EXPECT_EQ(font.findGlyph(32), nullptr);
+  data.intervalCount = 1;
+  EXPECT_EQ(font.findGlyph(15), &glyphs[5]);
+  EXPECT_EQ(font.findGlyph(16), nullptr);
+  data.intervalCount = 0;
+  EXPECT_EQ(font.findGlyph(10), nullptr);
+}
+
 TEST(UiSymbolFallback, SharesTheSameRasterAtBothScalesAndStyles) {
   for (const auto* family : {&small, &large}) {
     for (const auto style : {EpdFontFamily::REGULAR, EpdFontFamily::BOLD}) {

@@ -32,13 +32,6 @@ constexpr float bottomEdgeHomeGestureFraction(const bool readerMode) {
   return readerMode ? READER_BOTTOM_EDGE_HOME_GESTURE_FRAC_Y : BOTTOM_EDGE_HOME_GESTURE_FRAC_Y;
 }
 
-struct SideLayoutMap {
-  ButtonIndex pageBackPrimary;
-  ButtonIndex pageBackSecondary;
-  ButtonIndex pageForwardPrimary;
-  ButtonIndex pageForwardSecondary;
-};
-
 bool shouldSwapReaderSideButtons(const bool readerMode) {
   return readerMode && SETTINGS.sideButtonOrientationAware && SETTINGS.orientation != CrossPointSettings::PORTRAIT;
 }
@@ -166,14 +159,25 @@ MappedInputManager::Button MappedInputManager::menuButton(const Button direction
 }
 
 bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
+  switch (button) {
+    case Button::Back:
+    case Button::Confirm:
+    case Button::Left:
+    case Button::Right: {
+      const ButtonIndex physical = mappedFrontButtonFor(button);
+      return physical != kNoButton && (gpio.*fn)(physical);
+    }
+    case Button::Power:
+      return (gpio.*fn)(HalGPIO::BTN_POWER);
+    case Button::Up:
+    case Button::Down:
+    case Button::PageBack:
+    case Button::PageForward:
+      break;
+  }
+
   const ButtonIndex up = mapSideButtonForReaderOrientation(HalGPIO::BTN_UP, readerMode);
   const ButtonIndex down = mapSideButtonForReaderOrientation(HalGPIO::BTN_DOWN, readerMode);
-  const SideLayoutMap side = {
-      SETTINGS.sideButtonUpShort == CrossPointSettings::PREVIOUS_PAGE ? up : kNoButton,
-      SETTINGS.sideButtonDownShort == CrossPointSettings::PREVIOUS_PAGE ? down : kNoButton,
-      SETTINGS.sideButtonUpShort == CrossPointSettings::PAGE_TURN ? up : kNoButton,
-      SETTINGS.sideButtonDownShort == CrossPointSettings::PAGE_TURN ? down : kNoButton,
-  };
   const auto sideEvent = [&](const ButtonIndex physical) {
     if (physical == kNoButton) return false;
     if (fn == &HalGPIO::wasReleased && ((physical == HalGPIO::BTN_UP && suppressPhysicalUpRelease) ||
@@ -182,29 +186,27 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
     return (gpio.*fn)(physical);
   };
 
-  const ButtonIndex frontButton = mappedFrontButtonFor(button);
-
   switch (button) {
     case Button::Back:
     case Button::Confirm:
     case Button::Left:
     case Button::Right:
-      return frontButton != kNoButton && (gpio.*fn)(frontButton);
+    case Button::Power:
+      return false;  // These buttons return before side mapping.
     case Button::Up:
       // Reader menus should follow the same top/bottom side-button orientation as reader page turns.
       return sideEvent(up);
     case Button::Down:
       // Reader menus should follow the same top/bottom side-button orientation as reader page turns.
       return sideEvent(down);
-    case Button::Power:
-      // Power button bypasses remapping.
-      return (gpio.*fn)(HalGPIO::BTN_POWER);
     case Button::PageBack:
       // Reader page navigation uses side buttons and can be swapped via settings.
-      return sideEvent(side.pageBackPrimary) || sideEvent(side.pageBackSecondary);
+      return (SETTINGS.sideButtonUpShort == CrossPointSettings::PREVIOUS_PAGE && sideEvent(up)) ||
+             (SETTINGS.sideButtonDownShort == CrossPointSettings::PREVIOUS_PAGE && sideEvent(down));
     case Button::PageForward:
       // Reader page navigation uses side buttons and can be swapped via settings.
-      return sideEvent(side.pageForwardPrimary) || sideEvent(side.pageForwardSecondary);
+      return (SETTINGS.sideButtonUpShort == CrossPointSettings::PAGE_TURN && sideEvent(up)) ||
+             (SETTINGS.sideButtonDownShort == CrossPointSettings::PAGE_TURN && sideEvent(down));
   }
 
   return false;
@@ -212,27 +214,32 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
 
 uint8_t MappedInputManager::mappedFrontButtonFor(const Button button) const {
   const bool useReaderMapping = readerMode && SETTINGS.readerFrontButtonsEnabled;
-  const ButtonIndex btnBack = useReaderMapping ? SETTINGS.readerFrontButtonBack : SETTINGS.frontButtonBack;
-  const ButtonIndex btnConfirm = useReaderMapping ? SETTINGS.readerFrontButtonConfirm : SETTINGS.frontButtonConfirm;
-  const ButtonIndex btnLeft = useReaderMapping ? SETTINGS.readerFrontButtonLeft : SETTINGS.frontButtonLeft;
-  const ButtonIndex btnRight = useReaderMapping ? SETTINGS.readerFrontButtonRight : SETTINGS.frontButtonRight;
-  const ButtonIndex mappedBack = mapFrontButtonForReaderOrientation(btnBack, btnLeft, btnRight, readerMode);
-  const ButtonIndex mappedConfirm = mapFrontButtonForReaderOrientation(btnConfirm, btnLeft, btnRight, readerMode);
-  const ButtonIndex mappedLeft = mapFrontButtonForReaderOrientation(btnLeft, btnLeft, btnRight, readerMode);
-  const ButtonIndex mappedRight = mapFrontButtonForReaderOrientation(btnRight, btnLeft, btnRight, readerMode);
-
+  ButtonIndex physical;
   switch (button) {
     case Button::Back:
-      return mappedBack;
+      physical = useReaderMapping ? SETTINGS.readerFrontButtonBack : SETTINGS.frontButtonBack;
+      break;
     case Button::Confirm:
-      return mappedConfirm;
+      physical = useReaderMapping ? SETTINGS.readerFrontButtonConfirm : SETTINGS.frontButtonConfirm;
+      break;
     case Button::Left:
-      return mappedLeft;
+      physical = useReaderMapping ? SETTINGS.readerFrontButtonLeft : SETTINGS.frontButtonLeft;
+      break;
     case Button::Right:
-      return mappedRight;
+      physical = useReaderMapping ? SETTINGS.readerFrontButtonRight : SETTINGS.frontButtonRight;
+      break;
+    case Button::Up:
+    case Button::Down:
+    case Button::Power:
+    case Button::PageBack:
+    case Button::PageForward:
+      return kNoButton;
     default:
       return kNoButton;
   }
+  const ButtonIndex btnLeft = useReaderMapping ? SETTINGS.readerFrontButtonLeft : SETTINGS.frontButtonLeft;
+  const ButtonIndex btnRight = useReaderMapping ? SETTINGS.readerFrontButtonRight : SETTINGS.frontButtonRight;
+  return mapFrontButtonForReaderOrientation(physical, btnLeft, btnRight, readerMode);
 }
 
 bool MappedInputManager::shouldUsePowerAsConfirmFallback() const { return !readerMode || powerAsConfirmInReaderMode; }

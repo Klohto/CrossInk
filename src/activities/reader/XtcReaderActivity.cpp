@@ -1358,28 +1358,8 @@ void XtcReaderActivity::renderPage(const uint32_t pageToRender) {
   // Clear screen first
   renderer.clearScreen();
 
-  // Copy page bitmap using GfxRenderer's drawPixel
-  // XTC/XTCH pages are pre-rendered with status bar included, so render full page
-  const uint16_t maxSrcY = pageHeight;
-
-  // 1-bit mode: 8 pixels per byte, MSB first
-  const size_t srcRowBytes = (pageWidth + 7) / 8;  // 60 bytes for 480 width
-
-  for (uint16_t srcY = 0; srcY < maxSrcY; srcY++) {
-    const size_t srcRowStart = srcY * srcRowBytes;
-
-    for (uint16_t srcX = 0; srcX < pageWidth; srcX++) {
-      // Read source pixel (MSB first, bit 7 = leftmost pixel)
-      const size_t srcByte = srcRowStart + srcX / 8;
-      const size_t srcBit = 7 - (srcX % 8);
-      const bool isBlack = !((pageBuffer[srcByte] >> srcBit) & 1);  // XTC: 0 = black, 1 = white
-
-      if (isBlack) {
-        renderer.drawPixel(srcX, srcY, true);
-      }
-    }
-  }
-  // White pixels are already cleared by clearScreen()
+  // The page includes its status bar. Clip and rotate the packed bitmap once.
+  renderer.drawMonoBitmap(pageBuffer, pageWidth, pageHeight);
 
   free(pageBuffer);
 
@@ -1500,14 +1480,7 @@ bool XtcReaderActivity::drawCurrentPageToBuffer(const std::string& filePath, Gfx
       }
     }
   } else {
-    // 1-bit XTG: draw black pixels
-    const size_t srcRowBytes = (pageWidth + 7) / 8;
-    for (uint16_t srcY = 0; srcY < pageHeight; srcY++) {
-      for (uint16_t srcX = 0; srcX < pageWidth; srcX++) {
-        const bool isBlack = !((pageBuffer[srcY * srcRowBytes + srcX / 8] >> (7 - srcX % 8)) & 1);
-        if (isBlack) renderer.drawPixel(srcX, srcY, true);
-      }
-    }
+    renderer.drawMonoBitmap(pageBuffer, pageWidth, pageHeight);
   }
 
   free(pageBuffer);

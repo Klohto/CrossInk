@@ -245,6 +245,8 @@ class GfxRenderer {
   // Drawing
   bool isPixelBlack(int x, int y) const;
   void drawPixel(int x, int y, bool state = true) const;
+  // Byte-padded rows, MSB first, zero is black. White leaves the buffer alone.
+  void drawMonoBitmap(const uint8_t* bitmap, int width, int height, int x = 0, int y = 0) const;
   // Unscaled glyphs share one clipped, orientation-aware rasterizer.
   void drawGlyphBitmap(const uint8_t* bitmap, int width, int height, const glyphBitmap::Frame& frame, bool twoBit,
                        RenderMode mode, bool state) const;

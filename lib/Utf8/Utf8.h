@@ -50,6 +50,7 @@ int utf8SafeTruncateBuffer(const char* buf, int len);
 // word boundaries per character; Hangul is space-delimited, so layout keeps Hangul words whole
 // (see utf8IsHangul) and splits one without a hyphen only through the hyphenation path.
 inline bool utf8IsCjkBreakable(const uint32_t cp) {
+  if (cp < 0x1100) return false;
   return (cp >= 0x1100 && cp <= 0x11FF)        // Hangul Jamo
          || (cp >= 0x3000 && cp <= 0x303F)     // CJK Symbols and Punctuation
          || (cp >= 0x3040 && cp <= 0x309F)     // Hiragana
@@ -70,6 +71,7 @@ inline bool utf8IsCjkBreakable(const uint32_t cp) {
 // Returns true for Hangul letters. Korean separates words with spaces, so a boundary touching
 // Hangul is never an implicit line-break opportunity (CSS word-break: keep-all).
 inline bool utf8IsHangul(const uint32_t cp) {
+  if (cp < 0x1100) return false;
   return (cp >= 0x1100 && cp <= 0x11FF)      // Hangul Jamo
          || (cp >= 0x3130 && cp <= 0x318F)   // Hangul Compatibility Jamo
          || (cp >= 0xA960 && cp <= 0xA97F)   // Hangul Jamo Extended-A
@@ -82,6 +84,7 @@ inline bool utf8IsHangul(const uint32_t cp) {
 // selection — deliberately broader than utf8IsCjkBreakable, whose ranges are tuned to
 // implicit line-break opportunities and must not grow without rethinking layout.
 inline bool utf8IsCjkCodepoint(const uint32_t cp) {
+  if (cp < 0x1100) return false;
   return (cp >= 0x1100 && cp <= 0x11FF)        // Hangul Jamo
          || (cp >= 0x2E80 && cp <= 0x2FDF)     // CJK Radicals Supplement, Kangxi Radicals
          || (cp >= 0x3000 && cp <= 0x33FF)     // CJK punctuation, Kana, Bopomofo, Hangul Compat
@@ -104,6 +107,7 @@ inline bool utf8IsCjkCodepoint(const uint32_t cp) {
 // lookup. Unlike utf8IsCjkCodepoint(), this deliberately excludes punctuation
 // and compatibility symbols so callers can continue to skip standalone marks.
 inline bool utf8IsCjkWordCharacter(const uint32_t cp) {
+  if (cp < 0x1100) return false;
   return (cp >= 0x1100 && cp <= 0x11FF)        // Hangul Jamo
          || (cp >= 0x3040 && cp <= 0x30FF)     // Hiragana and Katakana
          || (cp >= 0x3100 && cp <= 0x312F)     // Bopomofo
@@ -125,6 +129,7 @@ inline bool utf8IsCjkWordCharacter(const uint32_t cp) {
 
 // Returns true for Unicode combining diacritical marks that should not advance the cursor.
 inline bool utf8IsCombiningMark(const uint32_t cp) {
+  if (cp < 0x0300) return false;
   return (cp >= 0x0300 && cp <= 0x036F)      // Combining Diacritical Marks
          || (cp >= 0x1DC0 && cp <= 0x1DFF)   // Combining Diacritical Marks Supplement
          || (cp >= 0x20D0 && cp <= 0x20FF)   // Combining Diacritical Marks for Symbols
@@ -135,6 +140,7 @@ inline bool utf8IsCombiningMark(const uint32_t cp) {
 // font pipeline has no variation-selector lookup, so they must not fall back
 // to a visible replacement glyph or consume layout width on their own.
 inline bool utf8IsVariationSelector(const uint32_t cp) {
+  if (cp < 0x180B) return false;
   return (cp >= 0x180B && cp <= 0x180D) || cp == 0x180F || (cp >= 0xFE00 && cp <= 0xFE0F) ||
          (cp >= 0xE0100 && cp <= 0xE01EF);
 }

@@ -230,6 +230,13 @@ const EpdGlyph* EpdFont::findGlyph(const uint32_t cp) const {
 
   if (count > 0) {
     const EpdUnicodeInterval* intervals = data->intervals;
+    const auto& first = intervals[0];
+    if (cp < first.first) return nullptr;
+    // Built-in Latin text stays in the first interval. Keep upper_bound's
+    // choice for overlapping intervals by checking the next start as well.
+    if (cp <= first.last && (count == 1 || cp < intervals[1].first)) {
+      return &data->glyph[first.offset + (cp - first.first)];
+    }
     const auto* end = intervals + count;
 
     // upper_bound: range lookup. Finds the first interval with first > cp, so the

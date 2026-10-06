@@ -2,6 +2,11 @@
 
 ### Changed
 
+- Map the requested input button once. Skip unused front and side mappings during each input poll.
+- Publish completed store singletons through a lock-free pointer. Settings reads avoid repeated runtime guard locks.
+- Skip Unicode range scans when a character is below the first supported range. Use this path during layout, font fallback and dictionary lookup.
+- Read glyphs in the first font interval directly. Later character ranges keep the binary search.
+- Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
 - Use direct grayscale in the X3 BMP viewer. Remove the dark base refresh and one BMP decode.
 - Draw unscaled BMP rows with one coordinate transform per row. Covers, boot and sleep images, and book images use this path.
 - Map native BMP palettes once and skip resampling divisions for images that keep their source size.
