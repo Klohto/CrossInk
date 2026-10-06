@@ -410,6 +410,24 @@ static inline void rotateCoordinates(const GfxRenderer::Orientation orientation,
   }
 }
 
+// Rotate the origin and both unit axes together. The axes need only sign
+// changes and swaps, so no neighboring points need to be transformed.
+__attribute__((always_inline)) static inline glyphBitmap::Frame rotateGlyphFrame(
+    const GfxRenderer::Orientation orientation, const glyphBitmap::Frame& frame, const uint16_t panelWidth,
+    const uint16_t panelHeight) {
+  switch (orientation) {
+    case GfxRenderer::Portrait:
+      return {frame.y, panelHeight - 1 - frame.x, frame.dxY, -frame.dxX, frame.dyY, -frame.dyX};
+    case GfxRenderer::LandscapeClockwise:
+      return {panelWidth - 1 - frame.x, panelHeight - 1 - frame.y, -frame.dxX, -frame.dxY, -frame.dyX, -frame.dyY};
+    case GfxRenderer::PortraitInverted:
+      return {panelWidth - 1 - frame.y, frame.x, -frame.dxY, frame.dxX, -frame.dyY, frame.dyX};
+    case GfxRenderer::LandscapeCounterClockwise:
+      return frame;
+  }
+  return {};
+}
+
 struct AlignedMemRect {
   uint16_t x = 0;
   uint16_t y = 0;
@@ -881,18 +899,7 @@ void GfxRenderer::drawGlyphBitmap(const uint8_t* bitmap, const int width, const 
   // Writes go to the framebuffer, or to the strip scratch in tiled grayscale
   // mode; getWriteOriginY()/getWriteRows() bound the rows that exist there.
   glyphBitmap::Target target{getWriteTarget(), panelWidth, panelWidthBytes, getWriteOriginY(), getWriteRows(), {}};
-  // Rotate the glyph origin once, then derive the two physical axes by
-  // rotating its neighbours along each logical axis. Together these encode
-  // the text rotation and the panel orientation as one orthogonal transform.
-  glyphBitmap::Frame& physical = target.frame;
-  rotateCoordinates(orientation, frame.x, frame.y, &physical.x, &physical.y, panelWidth, panelHeight);
-  int nextX, nextY;
-  rotateCoordinates(orientation, frame.x + frame.dxX, frame.y + frame.dxY, &nextX, &nextY, panelWidth, panelHeight);
-  physical.dxX = nextX - physical.x;
-  physical.dxY = nextY - physical.y;
-  rotateCoordinates(orientation, frame.x + frame.dyX, frame.y + frame.dyY, &nextX, &nextY, panelWidth, panelHeight);
-  physical.dyX = nextX - physical.x;
-  physical.dyY = nextY - physical.y;
+  target.frame = rotateGlyphFrame(orientation, frame, panelWidth, panelHeight);
 
   const glyphBitmap::Plane plane = mode == BW              ? glyphBitmap::Plane::BW
                                    : mode == GRAYSCALE_MSB ? glyphBitmap::Plane::GrayMSB
@@ -908,15 +915,7 @@ void GfxRenderer::drawMonoBitmap(const uint8_t* bitmap, const int width, const i
     glyphBitmap::clipToRect(logical, textClipLeft_, textClipTop_, textClipRight_, textClipBottom_, clip);
   }
   glyphBitmap::Target target{getWriteTarget(), panelWidth, panelWidthBytes, getWriteOriginY(), getWriteRows(), {}};
-  auto& physical = target.frame;
-  rotateCoordinates(orientation, x, y, &physical.x, &physical.y, panelWidth, panelHeight);
-  int nextX, nextY;
-  rotateCoordinates(orientation, x + 1, y, &nextX, &nextY, panelWidth, panelHeight);
-  physical.dxX = nextX - physical.x;
-  physical.dxY = nextY - physical.y;
-  rotateCoordinates(orientation, x, y + 1, &nextX, &nextY, panelWidth, panelHeight);
-  physical.dyX = nextX - physical.x;
-  physical.dyY = nextY - physical.y;
+  target.frame = rotateGlyphFrame(orientation, logical, panelWidth, panelHeight);
   monoBitmap::draw(bitmap, width, height, target, clip);
 }
 
@@ -2029,15 +2028,7 @@ void GfxRenderer::drawBitmapRow(const uint8_t* row, const int width, const int x
   glyphBitmap::Target target{
       _stripActive ? _stripBuf : frameBuffer,  panelWidth, panelWidthBytes, _stripActive ? _stripY0 : 0,
       _stripActive ? _stripRows : panelHeight, {}};
-  auto& frame = target.frame;
-  rotateCoordinates(orientation, x, y, &frame.x, &frame.y, panelWidth, panelHeight);
-  int nextX, nextY;
-  rotateCoordinates(orientation, x + 1, y, &nextX, &nextY, panelWidth, panelHeight);
-  frame.dxX = nextX - frame.x;
-  frame.dxY = nextY - frame.y;
-  rotateCoordinates(orientation, x, y + 1, &nextX, &nextY, panelWidth, panelHeight);
-  frame.dyX = nextX - frame.x;
-  frame.dyY = nextY - frame.y;
+  target.frame = rotateGlyphFrame(orientation, logical, panelWidth, panelHeight);
   const auto plane = mode == BW              ? bitmapRow::Plane::BW
                      : mode == GRAYSCALE_MSB ? bitmapRow::Plane::GrayMSB
                                              : bitmapRow::Plane::GrayLSB;

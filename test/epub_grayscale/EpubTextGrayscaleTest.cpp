@@ -1,6 +1,7 @@
 #include <Epub/blocks/TextBlock.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
+#include <GlyphBitmap.h>
 #include <SdCardFont.h>
 #include <TouchReaderPreviewModel.h>
 #include <gtest/gtest.h>
@@ -9,6 +10,169 @@
 #include <array>
 
 namespace {
+// The reference paints logical pixels through the existing scalar renderer.
+// Compare whole buffers, including guards around the strip scratch.
+template <class Reference, class Candidate>
+void compareRaster(GfxRenderer& renderer, HalDisplay& display, int origin, int rows, Reference reference,
+                   Candidate candidate) {
+  const auto initial = display.bw;
+  std::vector<uint8_t> expected(display.stride * rows + 32, 0xA5);
+  auto observed = expected;
+  if (origin >= 0) renderer.beginStripTarget(expected.data() + 16, origin, rows);
+  reference();
+  if (origin >= 0)
+    renderer.endStripTarget();
+  else
+    expected = display.bw;
+  display.bw = initial;
+  if (origin >= 0) renderer.beginStripTarget(observed.data() + 16, origin, rows);
+  candidate();
+  if (origin >= 0) {
+    renderer.endStripTarget();
+    ASSERT_EQ(display.bw, initial);
+  } else {
+    observed = display.bw;
+  }
+  ASSERT_EQ(observed, expected);
+  display.bw = initial;
+}
+
+template <class Check>
+void rasterPlacements(Check check) {
+  constexpr std::array<int, 7> positions{-9, -1, 0, 17, 39, 63, 80};
+  for (const auto [width, height] : {std::pair{64, 40}, std::pair{61, 39}}) {
+    fakeheap::reset(true);
+    HalDisplay display(width, height);
+    GfxRenderer renderer(display);
+    renderer.begin();
+    for (int orientation = 0; orientation < 4; ++orientation) {
+      renderer.setOrientation(GfxRenderer::Orientation(orientation));
+      for (int x : positions)
+        for (int y : positions)
+          for (const auto [origin, rows] :
+               {std::pair{-1, height}, std::pair{0, 1}, std::pair{13, 7}, std::pair{height - 1, 1}})
+            for (int clip = 0; clip < 3; ++clip) {
+              SCOPED_TRACE(testing::Message() << width << ':' << height << ':' << orientation << ':' << x << ':' << y
+                                              << ':' << origin << ':' << rows << ':' << clip);
+              if (clip) renderer.beginTextClip(2, 3, clip == 1 ? 32 : 0, clip == 1 ? 23 : 0);
+              check(renderer, display, x, y, origin, rows);
+              if (clip) renderer.endTextClip();
+            }
+    }
+  }
+}
+
+TEST(GlyphFrameRaster, PackedGlyphMatchesScalarPixelsAcrossOrientationsAndClips) {
+  constexpr int width = 11, height = 7;
+  std::array<uint8_t, (width * height + 3) / 4> twoBit{};
+  std::array<uint8_t, (width * height + 7) / 8> oneBit{};
+  for (int i = 0; i < width * height; ++i) {
+    twoBit[i / 4] |= uint8_t((i * 7 + i / width) % 4) << (6 - (i % 4) * 2);
+    oneBit[i / 8] |= uint8_t((i + i / width) % 2) << (7 - i % 8);
+  }
+  rasterPlacements([&](GfxRenderer& renderer, HalDisplay& display, int x, int y, int origin, int rows) {
+    for (const auto frame : {glyphBitmap::Frame{x, y, 1, 0, 0, 1}, glyphBitmap::Frame{x, y, 0, -1, 1, 0},
+                             glyphBitmap::Frame{x, y, -1, 0, 0, -1}, glyphBitmap::Frame{x, y, 0, 1, -1, 0}})
+      for (bool depth : {false, true})
+        for (auto mode : {GfxRenderer::BW, GfxRenderer::GRAYSCALE_LSB, GfxRenderer::GRAYSCALE_MSB})
+          for (bool state : {false, true}) {
+            SCOPED_TRACE(testing::Message()
+                         << frame.dxX << ':' << frame.dxY << ':' << depth << ':' << mode << ':' << state);
+            const auto* bitmap = depth ? twoBit.data() : oneBit.data();
+            compareRaster(
+                renderer, display, origin, rows,
+                [&] {
+                  for (int gy = 0; gy < height; ++gy)
+                    for (int gx = 0; gx < width; ++gx) {
+                      const int i = gy * width + gx;
+                      const int value =
+                          depth ? (bitmap[i / 4] >> (6 - (i % 4) * 2)) & 3 : (bitmap[i / 8] >> (7 - i % 8)) & 1;
+                      const bool ink = !depth || mode == GfxRenderer::BW    ? value != 0
+                                       : mode == GfxRenderer::GRAYSCALE_MSB ? value == 1 || value == 2
+                                                                            : value == 2;
+                      if (ink)
+                        renderer.drawPixel(x + gx * frame.dxX + gy * frame.dyX, y + gx * frame.dxY + gy * frame.dyY,
+                                           depth && mode != GfxRenderer::BW ? false : state);
+                    }
+                },
+                [&] { renderer.drawGlyphBitmap(bitmap, width, height, frame, depth, mode, state); });
+          }
+  });
+}
+
+TEST(GlyphFrameRaster, PaddedMonoRowsMatchScalarPixelsAcrossOrientationsAndClips) {
+  constexpr int width = 11, height = 7, stride = (width + 7) / 8;
+  std::array<uint8_t, stride * height> bitmap{};
+  for (int i = 0; i < int(bitmap.size()); ++i) bitmap[i] = uint8_t(i * 53 + 7);
+  rasterPlacements([&](GfxRenderer& renderer, HalDisplay& display, int x, int y, int origin, int rows) {
+    compareRaster(
+        renderer, display, origin, rows,
+        [&] {
+          for (int gy = 0; gy < height; ++gy)
+            for (int gx = 0; gx < width; ++gx)
+              if (!(bitmap[gy * stride + gx / 8] & (0x80 >> (gx % 8)))) renderer.drawPixel(x + gx, y + gy);
+        },
+        [&] { renderer.drawMonoBitmap(bitmap.data(), width, height, x, y); });
+  });
+}
+
+TEST(GlyphFrameRaster, BmpRowsMatchScalarTonesAcrossOrientationsAndClips) {
+  constexpr int width = 11, height = 7, stride = 4, offset = 70;
+  for (bool topDown : {false, true}) {
+    auto data = std::make_shared<HostFileData>();
+    data->bytes.resize(offset + stride * height, 0);
+    auto put16 = [&](int at, uint16_t value) { memcpy(data->bytes.data() + at, &value, 2); };
+    auto put32 = [&](int at, uint32_t value) { memcpy(data->bytes.data() + at, &value, 4); };
+    put16(0, 0x4d42);
+    put32(2, data->bytes.size());
+    put32(10, offset);
+    put32(14, 40);
+    put32(18, width);
+    put32(22, topDown ? -height : height);
+    put16(26, 1);
+    put16(28, 2);
+    put32(34, stride * height);
+    put32(46, 4);
+    for (int value = 0; value < 4; ++value)
+      for (int channel = 0; channel < 3; ++channel) data->bytes[54 + value * 4 + channel] = value * 85;
+    for (int y = 0; y < height; ++y)
+      for (int x = 0; x < width; ++x)
+        data->bytes[offset + (topDown ? y : height - 1 - y) * stride + x / 4] |= uint8_t((x + y) % 4)
+                                                                                 << (6 - (x % 4) * 2);
+    HalFile file(data);
+    Bitmap bitmap(file);
+    ASSERT_EQ(bitmap.parseHeaders(), BmpReaderError::Ok);
+    rasterPlacements([&](GfxRenderer& renderer, HalDisplay& display, int x, int y, int origin, int rows) {
+      for (bool absolute : {false, true})
+        for (auto mode : {GfxRenderer::BW, GfxRenderer::GRAYSCALE_LSB, GfxRenderer::GRAYSCALE_MSB}) {
+          SCOPED_TRACE(testing::Message() << topDown << ':' << absolute << ':' << mode);
+          renderer.setRenderMode(GfxRenderer::BW);
+          if (absolute) ASSERT_TRUE(renderer.displayAbsoluteGrayscaleBase());
+          renderer.setRenderMode(mode);
+          ASSERT_EQ(bitmap.rewindToData(), BmpReaderError::Ok);
+          compareRaster(
+              renderer, display, origin, rows,
+              [&] {
+                for (int gy = 0; gy < height; ++gy)
+                  for (int gx = 0; gx < width; ++gx) {
+                    const int value = (gx + gy) % 4;
+                    if (mode == GfxRenderer::BW) {
+                      if (value < 3) renderer.drawPixel(x + gx, y + gy);
+                    } else if (absolute) {
+                      renderer.drawPixel(x + gx, y + gy, mode == GfxRenderer::GRAYSCALE_MSB ? value < 2 : !(value & 1));
+                    } else if (value == 1 || (mode == GfxRenderer::GRAYSCALE_MSB && value == 2)) {
+                      renderer.drawPixel(x + gx, y + gy, false);
+                    }
+                  }
+              },
+              [&] { ASSERT_TRUE(renderer.drawBitmap(bitmap, x, y, 0, 0)); });
+        }
+      renderer.setRenderMode(GfxRenderer::BW);
+    });
+    file.close();
+  }
+}
+
 TEST(GlyphStripBounds, MatchesRotatedCornerReferenceAcrossBandsAndReversedBounds) {
   fakeheap::reset(true);
   HalDisplay display(64, 40);
