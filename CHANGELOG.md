@@ -2,61 +2,63 @@
 
 ## [1.6.1-2.0] - 2026-10-06
 
-### Added
+This version builds on 1.6.1-1.0. It prepares reading pages ahead and shows the saved page earlier when you wake the X3.
 
-- Restore the saved X3 reading page before loading fonts and EPUB metadata. Keep its footer until the next page turn when the index estimate changes during wake.
-- Keep the current text page and four following pages as completed pixels on SD. The eight-slot cache rolls across prepared chapter boundaries.
-- Save completed EPUB parser events in a format that can be reused after font or layout changes.
-- Hold Left or Right for 600 ms on the Carousel Home screen to switch between books and the menu. A short press moves within the selected row. Returning to books keeps the selected book.
+[Download the X3 .bin](https://github.com/Klohto/CrossInk/releases/download/1.6.1-2.0/crossink-1.6.1-2.0-x3.bin)
 
-### Changed
+### Reading and wake
 
-- Open the requested X3 EPUB page first. Prepare up to twelve layout pages ahead in small steps, then persist the readable prefix on sleep or exit. The page count stays estimated while the chapter is incomplete.
-- Draw supported X3 antialiased text pages with one grayscale panel activation. Periodic strong refreshes retain their existing schedule.
-- Pause optional chapter, page and cover preparation after input. Resume after 250 ms without input, with cancellation checks between work units.
-- Release Carousel snapshots before missing covers need ZIP and thumbnail buffers.
+- Wake shows the saved reading page before fonts and book data finish loading. A valid saved gray page restores its antialiasing in that first screen update.
+- An EPUB opens at the requested page while chapter preparation continues. A `~` beside the page count marks an estimate until the chapter is ready.
+- The reader prepares up to twelve pages of layout ahead. A separate cache on SD keeps the current text page and four pages ahead as finished screen images, so a cache hit can skip drawing the text again.
+- Completed chapters save parsed content on SD. After a font or layout change, the reader can reuse that content to calculate the new pages. The EPUB remains the source file.
+- Supported text pages show their gray tones in one screen update when memory allows. The scheduled full refreshes still clear accumulated ghosting.
+
+### Controls and Home
+
+- Button input pauses optional page, chapter and cover preparation. Work resumes after a short pause in input. A cover that is already decoding finishes its current job first.
+- In Carousel, hold Left or Right for 600 ms to switch between the book row and the menu row. A short press moves one item. Returning to books keeps the selected book.
+- Carousel frees memory used by saved screens before it decodes missing covers.
+
+### Cache behavior
+
+Preparation runs on the X3 as you read. The first visit to a chapter still prepares its content. Completed screen images cover ordinary text pages; pages with images or special reader overlays use the existing drawing path. Keep free space on the SD card for these caches.
+
+See [reader preparation](docs/reader-preparation.md) for the cache details.
 
 ## [1.6.1-1.0] - 2026-10-06
 
-The accepted v16 source is also published as 1.6.1-1.0. The x3-perf-v16 release keeps its original files.
+This is the accepted v16 build with its new version number. It includes the earlier performance work on CrossInk 1.6.1.
 
+[Download the X3 .bin](https://github.com/Klohto/CrossInk/releases/download/1.6.1-1.0/crossink-1.6.1-1.0-x3.bin)
 
-### Changed
+### Reading and fonts
 
-- Read ASCII text-direction classes from a constant table during layout and drawing. Use a shift for range midpoints.
+- Antialiased EPUB text reuses font and layout work when it builds the gray screen image. Page drawing repeats fewer text operations.
+- Small caps, superscripts and subscripts use improved smoothing with the X3's four gray levels. Regular text keeps its existing appearance.
+- EPUB layout reuses widths of repeated short words. The indexing popup also avoids a duplicate screen refresh.
+- Text drawing and measurement reuse character lookups across readers and menus. Compressed fonts decode with less repeated work.
+- TXT pages need fewer width checks to choose line breaks. One-bit XTC pages draw from their packed rows.
 
-- Map the requested input button once. Skip unused front and side mappings during each input poll.
-- Publish completed store singletons through a lock-free pointer. Settings reads avoid repeated runtime guard locks.
-- Keep the acquired SPI mutex handle in its guard. Release uses that handle for SD and display transactions.
-- Skip Unicode range scans when a character is below the first supported range. Use this path during layout, font fallback and dictionary lookup.
-- Decode ASCII characters directly before the UTF-8 length check. Keep the cursor at the terminating zero.
-- Read glyphs in the first font interval directly. Later character ranges keep the binary search.
-- Resolve character fallback and glyph data together during text drawing and measurement.
-- Advance PNG sampling positions with addition. Use the same grayscale weights with fewer arithmetic steps when creating covers.
-- Skip ligature searches when the first character is outside the sorted table.
-- Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
-- Skip packed groups of four white glyph pixels. They leave every framebuffer plane alone.
-- Check glyph strip bounds with the physical Y extent. Keep inactive strip checks on their short return path.
-- Rotate glyphs, one-bit XTC bitmaps and BMP rows with one orientation choice. Derive their axes directly to reduce drawing work.
-- Select packed glyph pixels with a constant table. Use a fixed decoder for each pixel depth across readers and menus.
-- Call navigation callbacks directly during each poll. Keep the press, hold and release order.
-- Inline the one-bit DEFLATE decoder used for compressed fonts and cached content.
-- Read DEFLATE fields in groups from the current input byte. Keep the bit state and refill order.
-- Compare dictionary suggestions directly with the read buffer to avoid a temporary string for each word.
-- Use direct grayscale in the X3 BMP viewer. Remove the dark base refresh and one BMP decode.
-- Draw unscaled BMP rows with one coordinate transform per row. Covers, boot and sleep images, and book images use this path.
-- Map native BMP palettes once and skip resampling divisions for images that keep their source size.
-- Reuse glyph lookups during text drawing and measurement across menus and readers.
-- Skip SD writes when settings or other JSON stores have the same saved content.
-- Search TXT line breaks with fewer width checks and reuse the current line buffer.
-- Load Home covers after the first visible frame. Remove the repeated frame before loading starts.
-- Combine quick Library cover completions into fewer screen refreshes. Check input between covers.
+### Sleep and images
 
-### Fixed
+- Dark, light and blank sleep screens appear before reader cleanup finishes. Reading progress is saved before the device enters deep sleep.
+- Custom BMP and book-cover sleep screens include the Sleeping label in the final image. Entering sleep needs fewer screen updates.
+- Opening a BMP in the file browser draws its gray image directly, removing the initial dark frame and a repeated decode.
+- BMP drawing does less work for each row and reuses palette data. This helps the image viewer, covers and sleep images.
+- Closing the image viewer goes straight to the next screen without an extra blank refresh.
 
-- Reject failed DEFLATE distance codes before reading the distance tables.
-- Keep PNG row-filter state when a cover crop skips source rows. Reject unsupported PNG bit depths before allocating or writing output.
-- Remove the blank screen refresh when the image viewer exits. The next activity draws its screen.
+### Home, Library and controls
+
+- Home shows its first screen before loading covers. Quick Library cover results share screen updates, with input checks between covers.
+- Library rescans find saved book entries with less lookup work and reuse unchanged metadata.
+- Button polling and navigation callbacks do less repeated work. Settings and other saved stores skip writing unchanged content to SD.
+- Dictionary suggestions use fewer temporary allocations.
+
+### Fixes
+
+- Invalid distance codes in compressed data are rejected before their tables are read.
+- Cropped PNG covers retain the correct row data. Unsupported PNG bit depths are rejected before decoding starts.
 
 ## [v1.6.1] - 2026-10-03
 
