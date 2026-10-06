@@ -13,7 +13,7 @@ class HalSpiBus {
     Lock& operator=(const Lock&) = delete;
 
    private:
-    bool acquired = false;
+    SemaphoreHandle_t acquiredMutex = nullptr;
   };
 
   static HalSpiBus& getInstance();

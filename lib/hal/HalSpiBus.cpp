@@ -20,15 +20,16 @@ HalSpiBus::Lock::Lock() {
     LOG_ERR("SPI", "SPI bus mutex not initialized, skipping lock");
     return;
   }
-  const BaseType_t takeResult = xSemaphoreTakeRecursive(bus.mutex, portMAX_DELAY);
+  acquiredMutex = bus.mutex;
+  const BaseType_t takeResult = xSemaphoreTakeRecursive(acquiredMutex, portMAX_DELAY);
   if (takeResult != pdTRUE) {
+    acquiredMutex = nullptr;
     LOG_ERR("SPI", "Failed to acquire SPI bus mutex");
     return;
   }
-  acquired = true;
 }
 
 HalSpiBus::Lock::~Lock() {
-  if (!acquired) return;
-  xSemaphoreGiveRecursive(HalSpiBus::getInstance().mutex);
+  if (acquiredMutex == nullptr) return;
+  xSemaphoreGiveRecursive(acquiredMutex);
 }
