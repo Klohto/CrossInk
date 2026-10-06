@@ -217,6 +217,6 @@
       "exact_release_native_states": 61
     }
   ],
-  "verification": "Version 1.6.1-2.0 is built from its clean saved source. Native daily cycles restore exact pages after wake. Earlier version trees and their saved images remain available. Daily rates use the stated reading routine and fixture counts. The complete function-body audit stays open.",
+  "verification": "Version 1.6.1-2.0 is built from its clean saved source. Native reading tests restore exact pages after wake. Earlier version trees and their saved images remain available.",
   "current_source_commit": "735e34c0fe027b517d39c9c10bc246b92bdff5c6"
 }

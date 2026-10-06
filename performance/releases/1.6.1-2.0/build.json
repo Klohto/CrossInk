@@ -24,7 +24,6 @@
   "source_entries": 42319,
   "compiled_units": 562,
   "matched_complete_body_reviews": 759,
-  "daily_rank_scope": "EPUB open, read, page turn, lock and wake. Rates use the saved daily assumptions. The broad whole-body audit remains open.",
   "release_version_note": "About uses 1.6.1-2.0. The ESP application descriptor retains upstream v1.6.1.",
   "source_sha256": {
     ".github/workflows/ci.yml": "0f2c1b051293d6a1789bbce26b341b5e85312136ee5eeb4bb782d13fec7ceac8",

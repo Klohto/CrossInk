@@ -24,4 +24,4 @@ Source commit: 735e34c0fe027b517d39c9c10bc246b92bdff5c6.
 Source tree: 4f143730d6410e7db5ae7029f9bb34e00773b00f.
 App SHA-256: 67847a8dc2ce29578db7e2a8db74951323278779cf46588f1494c211f311e924.
 
-The daily-use tables rank 42,319 source entries under the saved use assumptions. Full body checks match 759 entries. That work list still has pending reviews. The whole firmware audit stays open. Font profiles remain shelved; BMP filename work stays on hold. The automation remains paused.
+Release assets contain the X3 firmware binary. Source history is kept in this fork. Font profiles remain shelved; BMP filename work stays on hold.
