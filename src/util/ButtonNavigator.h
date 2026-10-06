@@ -1,12 +1,10 @@
 #pragma once
 
 #include <array>
-#include <functional>
 
 #include "MappedInputManager.h"
 
 class ButtonNavigator final {
-  using Callback = std::function<void()>;
   using Buttons = std::array<MappedInputManager::Button, 2>;
 
   const uint16_t continuousStartMs;
@@ -15,6 +13,9 @@ class ButtonNavigator final {
   static const MappedInputManager* mappedInput;
 
   [[nodiscard]] bool shouldNavigateContinuously() const;
+  [[nodiscard]] bool hasPress(const Buttons& buttons) const;
+  [[nodiscard]] bool hasRelease(const Buttons& buttons) const;
+  [[nodiscard]] bool canNavigateContinuously(const Buttons& buttons) const;
 
  public:
   explicit ButtonNavigator(const uint16_t continuousIntervalMs = 500, const uint16_t continuousStartMs = 500)
@@ -22,21 +23,75 @@ class ButtonNavigator final {
 
   static void setMappedInputManager(const MappedInputManager& mappedInputManager) { mappedInput = &mappedInputManager; }
 
-  void onNext(const Callback& callback);
-  void onPrevious(const Callback& callback);
-  void onPressAndContinuous(const Buttons& buttons, const Callback& callback);
+  // These callbacks run in this poll and are never stored.
+  template <typename Callback>
+  void onNext(Callback&& callback) {
+    onNextPress(callback);
+    onNextContinuous(callback);
+  }
 
-  void onNextPress(const Callback& callback);
-  void onPreviousPress(const Callback& callback);
-  void onPress(const Buttons& buttons, const Callback& callback);
+  template <typename Callback>
+  void onPrevious(Callback&& callback) {
+    onPreviousPress(callback);
+    onPreviousContinuous(callback);
+  }
 
-  void onNextRelease(const Callback& callback);
-  void onPreviousRelease(const Callback& callback);
-  void onRelease(const Buttons& buttons, const Callback& callback);
+  template <typename Callback>
+  void onPressAndContinuous(const Buttons& buttons, Callback&& callback) {
+    onPress(buttons, callback);
+    onContinuous(buttons, callback);
+  }
 
-  void onNextContinuous(const Callback& callback);
-  void onPreviousContinuous(const Callback& callback);
-  void onContinuous(const Buttons& buttons, const Callback& callback);
+  template <typename Callback>
+  void onNextPress(Callback&& callback) {
+    onPress(getNextButtons(), callback);
+  }
+
+  template <typename Callback>
+  void onPreviousPress(Callback&& callback) {
+    onPress(getPreviousButtons(), callback);
+  }
+
+  template <typename Callback>
+  void onPress(const Buttons& buttons, Callback&& callback) {
+    if (hasPress(buttons)) callback();
+  }
+
+  template <typename Callback>
+  void onNextRelease(Callback&& callback) {
+    onRelease(getNextButtons(), callback);
+  }
+
+  template <typename Callback>
+  void onPreviousRelease(Callback&& callback) {
+    onRelease(getPreviousButtons(), callback);
+  }
+
+  template <typename Callback>
+  void onRelease(const Buttons& buttons, Callback&& callback) {
+    if (hasRelease(buttons)) {
+      if (lastContinuousNavTime == 0) callback();
+      lastContinuousNavTime = 0;
+    }
+  }
+
+  template <typename Callback>
+  void onNextContinuous(Callback&& callback) {
+    onContinuous(getNextButtons(), callback);
+  }
+
+  template <typename Callback>
+  void onPreviousContinuous(Callback&& callback) {
+    onContinuous(getPreviousButtons(), callback);
+  }
+
+  template <typename Callback>
+  void onContinuous(const Buttons& buttons, Callback&& callback) {
+    if (canNavigateContinuously(buttons)) {
+      callback();
+      lastContinuousNavTime = millis();
+    }
+  }
 
   [[nodiscard]] static int nextIndex(int currentIndex, int totalItems);
   [[nodiscard]] static int previousIndex(int currentIndex, int totalItems);

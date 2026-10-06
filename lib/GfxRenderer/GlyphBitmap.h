@@ -132,10 +132,13 @@ inline void draw(const uint8_t* bitmap, int width, int height, bool twoBit, Plan
       }
       while (remaining >= 4) {
         const uint8_t packed = bitmap[source >> 2];
-        paint(target.buffer, destination, packed >> 6, levels, clearBits);
-        paint(target.buffer, destination + stepX, (packed >> 4) & 3, levels, clearBits);
-        paint(target.buffer, destination + 2 * stepX, (packed >> 2) & 3, levels, clearBits);
-        paint(target.buffer, destination + 3 * stepX, packed & 3, levels, clearBits);
+        // A zero byte contains four white pixels, which leave every plane alone.
+        if (packed) {
+          paint(target.buffer, destination, packed >> 6, levels, clearBits);
+          paint(target.buffer, destination + stepX, (packed >> 4) & 3, levels, clearBits);
+          paint(target.buffer, destination + 2 * stepX, (packed >> 2) & 3, levels, clearBits);
+          paint(target.buffer, destination + 3 * stepX, packed & 3, levels, clearBits);
+        }
         source += 4;
         destination += 4 * stepX;
         remaining -= 4;
