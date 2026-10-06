@@ -2,7 +2,7 @@
   "upstream": "uxjulia/CrossInk",
   "base": "9914146eeae7b46b300f475a16c32426fc02ec1f",
   "imported_head": "33b50c467d730494f2709d3d099fcecd3dc0853a",
-  "final_tree": "4bc3d0c710cb281d4d472442b6bab885db0a3dd7",
+  "final_tree": "4f143730d6410e7db5ae7029f9bb34e00773b00f",
   "iterations": [
     {
       "iteration": 1,
@@ -192,8 +192,31 @@
       "commit": "96725899bbadfdc7de907810f9d74133b0d58443",
       "tag": "x3-perf-v16",
       "changed_files": 95
+    },
+    {
+      "version": "1.6.1-1.0",
+      "alias_of": "x3-perf-v16",
+      "commit": "96725899bbadfdc7de907810f9d74133b0d58443",
+      "tree": "4bc3d0c710cb281d4d472442b6bab885db0a3dd7",
+      "tag": "1.6.1-1.0",
+      "firmware_sha256": "85c4d6f12af1ac6567c0e3a057e24a2352d3cb74cf9620863c454f5ca253d426"
+    },
+    {
+      "version": "1.6.1-2.0",
+      "commit": "735e34c0fe027b517d39c9c10bc246b92bdff5c6",
+      "tree": "4f143730d6410e7db5ae7029f9bb34e00773b00f",
+      "tag": "1.6.1-2.0",
+      "firmware_sha256": "67847a8dc2ce29578db7e2a8db74951323278779cf46588f1494c211f311e924",
+      "app_bytes": 6333744,
+      "static_ram_bytes": 65256,
+      "linked_flash_bytes": 6319615,
+      "host_checks": 974,
+      "compiled_units": 562,
+      "source_entries": 42319,
+      "matched_full_body_reviews": 759,
+      "exact_release_native_states": 61
     }
   ],
-  "verification": "The imported v1 to v15 trees keep their saved identities. V16 is built from the clean saved source commit. Its native daily cycle restores exact pages after wake and saved-book reopen.",
-  "current_source_commit": "96725899bbadfdc7de907810f9d74133b0d58443"
+  "verification": "Version 1.6.1-2.0 is built from its clean saved source. Native daily cycles restore exact pages after wake. Earlier version trees and their saved images remain available. Daily rates use the stated reading routine and fixture counts. The complete function-body audit stays open.",
+  "current_source_commit": "735e34c0fe027b517d39c9c10bc246b92bdff5c6"
 }

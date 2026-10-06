@@ -1,0 +1,40 @@
+{
+  "source_commit": "96725899bbadfdc7de907810f9d74133b0d58443",
+  "staged_tree": "4bc3d0c710cb281d4d472442b6bab885db0a3dd7",
+  "source_tag": "1.6.1-1.0",
+  "base": "9914146eeae7b46b300f475a16c32426fc02ec1f",
+  "incremental_base": "35dc4533211e31e092c3192abf4692cd3d4caaa5",
+  "build_version": "1.6.1-1.0",
+  "sdk_commit": "699370183fa3a0e33c9cb83a36f701bbb6022095",
+  "source_sha256": {
+    "docs/performance-v16.md": "0fe72a99c2fe1122df7606e2caefe294b1e11632515470d5d218f73396820c5b",
+    "lib/Epub/Epub/ParsedText.cpp": "66195a2bf43b3e58b875adf5f02280519d64d8f6b6ee96097056bc7a0b31ba6b",
+    "lib/GfxRenderer/GfxRenderer.cpp": "37d7cf87af6e5290dc36ce47ad0eaa5015ab1e26211dcfd6f0365b4cf0474a12",
+    "lib/GfxRenderer/GfxRenderer.h": "3212443f117fe491e3700649364e543a7c2b518db47f7b7b0fa3b0d66f32bce0",
+    "lib/LibraryIndex/LibraryBuilder.cpp": "cfcdf4968e2809fc1ef10b4f6575282698cf0206a5815b3cd4b4378a9bb3f81f",
+    "src/activities/boot_sleep/SleepActivity.cpp": "f0c85a1f7a317ba19afeaae5e81e24e622109d27d3db97684dcd0d158396891f",
+    "src/activities/boot_sleep/SleepActivity.h": "135b1e91fe0876c1db3ea53eff2af44c91d5a8574a49919987ce42cb871d079f",
+    "src/activities/reader/EpubGrayscale.cpp": "5c330e3c3a4c997db43a56d2bf334b2d7d3a33e07359e4efd06509a3ccbf913f",
+    "src/activities/reader/EpubReaderActivity.cpp": "0b23750d6d7f99a19eb9ce0553237e01928bc6fbf27e1ad13b1920757ea510b5",
+    "test/chapter_html_slim_parser/ChapterHtmlSlimParserTest.cpp": "ac82844bab7d5356e0de9049c7528c19fe5adc06786e16ae52beb25f994d0646",
+    "test/chapter_html_slim_parser/stubs/GfxRenderer.h": "6da3eebae3a1974db3a8275b04d13b0348ceebcf7757f25fced525147da0d6ea",
+    "test/epub_grayscale/EpubGrayscaleTest.cpp": "b5b26a1848e851a94219ca67b019276cf0fcc0265bbbf13b043da1e6bba50785",
+    "test/epub_grayscale/EpubTextGrayscaleTest.cpp": "4ef6c41506eeda503904fb02843080fff1c11dc6ee920c2c7daa0752bd45c6ec",
+    "test/epub_grayscale/stubs/Epub/Page.h": "7588f7479fc0cdf9f83bf2cca405b8a92efa207f89053c610e25581b06e0e13a",
+    "test/epub_grayscale/stubs/GfxRenderer.h": "09eb7c2d2cd04595b510e91174e9ba27288802ba7043d6e7b1670e6380d829f4"
+  },
+  "image_hashes": {
+    "firmware.bin": "85c4d6f12af1ac6567c0e3a057e24a2352d3cb74cf9620863c454f5ca253d426",
+    "firmware.elf": "bd7790c2fbc477895c91e34624780e8acf4d469f1f3986d719e9586f9c4727ab",
+    "full-flash.bin": "08cb74b855881ed6aaa7bb8c12d3326c2b9ad48bf0289e1067705aff639a389a"
+  },
+  "static_ram_bytes": 64904,
+  "linked_flash_bytes": 6303519,
+  "app_bytes": 6317632,
+  "app_free_bytes": 235968,
+  "host_checks": 954,
+  "deferred_png_checks": 18,
+  "version_alias_of": "x3-perf-v16",
+  "version_metadata": "BuildInfo and About use1.6.1-1.0; ESP application descriptor retains upstreamv1.6.1",
+  "native_verification": "baseline-1.0-verification.json"
+}

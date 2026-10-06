@@ -22,7 +22,7 @@ Optional work waits for 250 ms without input. Page preparation checks cancellati
 
 The page cache reuses the reader's 80-row scratch buffer. When two extra 80-row gray planes fit above the heap floor, it draws 80 rows per step and splits them into saved bands. Monochrome pages reuse one plane. Each saved band contains up to 24 physical rows. The three band planes occupy 7,128 bytes at X3 geometry. Early wake frees this buffer before loading fonts. Direct text composition can use another transient 80-row plane. Allocation can fail, and the reader then uses its existing path.
 
-Optional rendering keeps a 60,000-byte free-heap floor with a contiguous allocation margin. The firmware keeps one live full-screen framebuffer. Completed pixels reside on SD. The cache is bounded to eight files, with a maximum of about 1.2 MiB for uncompressed three-plane X3 pages.
+Extra gray planes use a 60,000-byte free-heap allocation reserve with a contiguous margin. Small-band preparation starts through the existing 64 KiB free-heap and 40 KiB block checks. Existing font and layout work can take free heap below these values. The firmware keeps one live full-screen framebuffer. Completed pixels reside on SD. The cache is bounded to eight files, with a maximum of about 1.2 MiB for uncompressed three-plane X3 pages.
 
 Hold Left or Right for 600 ms in the Carousel theme to switch rows. Release after a short press to move one item. The selected book survives a visit to the menu row. Up and Down retain their row controls.
 
