@@ -1,5 +1,5 @@
 // get current path from query parameter
-const currentPath = decodeURIComponent(new URLSearchParams(window.location.search).get("path") || "/");
+const currentPath = new URLSearchParams(window.location.search).get("path") || "/";
 
 if (currentPath !== "/") {
   const leaf = currentPath.split("/").filter(Boolean).pop();
@@ -427,7 +427,7 @@ function restoreAfterCancel() {
   operationCancelled = false;
   isUploadInProgress = false;
   document.getElementById("uploadModalClose").classList.remove("disabled");
-  document.getElementById("fileInput").disabled = false;
+  setUploadPickersDisabled(false);
   const progressFill = document.getElementById("progress-fill");
   const progressText = document.getElementById("progress-text");
   progressFill.style.width = "0%";
@@ -445,6 +445,11 @@ function closeUploadModal() {
     return;
   }
   document.getElementById("uploadModal").classList.remove("open");
+  uploadSelectionEpoch++;
+  isReadingUploadFolder = false;
+  setUploadPickersDisabled(false);
+  document.getElementById("folderInput").value = "";
+  document.getElementById("uploadSelectionSummary").textContent = "";
   const fileInput = document.getElementById("fileInput");
   fileInput.value = "";
   fileInput.classList.remove("has-files");
@@ -1403,6 +1408,106 @@ function clearImagePicker() {
   if (uploadBtn) uploadBtn.style.display = "block";
 }
 
+const uploadRelativePaths = new WeakMap();
+let uploadSelectionEpoch = 0;
+let isReadingUploadFolder = false;
+
+function setUploadPickersDisabled(disabled) {
+  document.getElementById("fileInput").disabled = disabled;
+  document.getElementById("folderInput").disabled = disabled;
+  document.getElementById("folderUploadBtn").disabled = disabled;
+}
+
+function uploadRelativePath(file) {
+  return uploadRelativePaths.get(file) || file.webkitRelativePath || file.name;
+}
+
+function uploadDestination(file) {
+  const parts = uploadRelativePath(file).split("/");
+  parts.pop();
+  for (const part of parts) {
+    if (!isSafeFileName(part) || /[\x00-\x1f\x7f]/.test(part) || part.trim() !== part ||
+        part.endsWith(".") || new TextEncoder().encode(part).length > 150) {
+      throw new Error(`Folder name cannot be used on the reader: ${part}`);
+    }
+  }
+  return parts.length ? `${currentPath.replace(/\/$/, "")}/${parts.join("/")}` : currentPath;
+}
+
+function setUploadSelection(items) {
+  const selected = items.filter(({ file }) => file.name !== ".DS_Store" && !file.name.startsWith("._"));
+  const transfer = new DataTransfer();
+  selected.forEach(({ file }) => transfer.items.add(file));
+  const input = document.getElementById("fileInput");
+  input.files = transfer.files;
+  selected.forEach(({ path }, index) => uploadRelativePaths.set(input.files[index], path));
+  validateFile();
+}
+
+function chooseUploadFolder() {
+  if (isUploadInProgress || isReadingUploadFolder) return;
+  const input = document.getElementById("folderInput");
+  if (!("webkitdirectory" in input)) {
+    showNotification("This browser cannot select folders. Use a browser with folder selection.", "warning");
+    return;
+  }
+  input.value = "";
+  input.click();
+}
+
+function selectUploadFolder() {
+  const files = Array.from(document.getElementById("folderInput").files);
+  if (!files.length || isUploadInProgress) return;
+  setUploadSelection(files.map((file) => ({ file, path: file.webkitRelativePath || file.name })));
+}
+
+async function readDroppedUploadEntry(entry, parent, files) {
+  const path = parent ? `${parent}/${entry.name}` : entry.name;
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+    files.push({ file, path });
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    while (true) {
+      const entries = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+      if (!entries.length) break;
+      for (const child of entries) await readDroppedUploadEntry(child, path, files);
+    }
+  }
+}
+
+async function prepareUploadDirectory(path, directoryLists) {
+  const key = (value) => value.toLowerCase();
+  async function list(directory) {
+    if (!directoryLists.has(key(directory))) {
+      const response = await fetch(`/api/files?path=${encodeURIComponent(directory)}&_=${Date.now()}`);
+      if (!response.ok) throw new Error(await response.text() || `Cannot read folder: ${directory}`);
+      directoryLists.set(key(directory), await response.json());
+    }
+    return directoryLists.get(key(directory));
+  }
+  let parent = currentPath;
+  const relative = path === currentPath ? [] : path.slice(currentPath.replace(/\/$/, "").length + 1).split("/");
+  for (const name of relative) {
+    if (operationCancelled) throw new Error("Upload aborted");
+    const entries = await list(parent);
+    const existing = entries.find((entry) => key(entry.name) === key(name));
+    if (existing && !existing.isDirectory) throw new Error(`A file already has this folder name: ${name}`);
+    if (!existing) {
+      const response = await fetch("/mkdir", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ path: parent, name }),
+      });
+      if (!response.ok) throw new Error(await response.text() || `Cannot create folder: ${name}`);
+      entries.push({ name, isDirectory: true });
+    }
+    parent = `${parent.replace(/\/$/, "")}/${existing ? existing.name : name}`;
+  }
+  if (operationCancelled) throw new Error("Upload aborted");
+  return { path: parent, names: new Set((await list(parent)).map((entry) => key(entry.name))) };
+}
+
 // Set up file input click listener once
 (function setupFileInputListener() {
   const fileInput = document.getElementById("fileInput");
@@ -1427,7 +1532,7 @@ function clearImagePicker() {
     // highlight flickering as the cursor moves over the hint text or input.
     let dragDepth = 0;
 
-    const uploadBusy = () => typeof isUploadInProgress !== "undefined" && isUploadInProgress;
+    const uploadBusy = () => isReadingUploadFolder || (typeof isUploadInProgress !== "undefined" && isUploadInProgress);
 
     dropZone.addEventListener("click", function (e) {
       if (uploadBusy()) return;
@@ -1451,7 +1556,7 @@ function clearImagePicker() {
       if (dragDepth === 0) dropZone.classList.remove("dragover");
     });
 
-    dropZone.addEventListener("drop", function (e) {
+    dropZone.addEventListener("drop", async function (e) {
       e.preventDefault();
       dragDepth = 0;
       dropZone.classList.remove("dragover");
@@ -1459,15 +1564,32 @@ function clearImagePicker() {
       // Don't let a drop disrupt an in-flight transfer.
       if (uploadBusy()) return;
 
-      const dropped = e.dataTransfer && e.dataTransfer.files;
-      if (!dropped || dropped.length === 0) return;
-
-      // Replace the current selection, matching native file-picker semantics.
-      const dt = new DataTransfer();
-      for (const file of dropped) dt.items.add(file);
-      fileInput.files = dt.files;
-
-      validateFile();
+      const fallback = Array.from(e.dataTransfer?.files || []);
+      const entries = Array.from(e.dataTransfer?.items || [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsEntry ? item.getAsEntry() : item.webkitGetAsEntry?.());
+      const epoch = ++uploadSelectionEpoch;
+      isReadingUploadFolder = true;
+      setUploadPickersDisabled(true);
+      document.getElementById("uploadBtn").disabled = true;
+      document.getElementById("uploadSelectionSummary").textContent = "Reading selected folders...";
+      try {
+        const files = [];
+        if (entries.length && entries.every(Boolean)) {
+          for (const entry of entries) await readDroppedUploadEntry(entry, "", files);
+        } else {
+          fallback.forEach((file) => files.push({ file, path: file.webkitRelativePath || file.name }));
+        }
+        if (epoch === uploadSelectionEpoch) setUploadSelection(files);
+      } catch (error) {
+        if (epoch === uploadSelectionEpoch) showNotification(`Cannot read selected folder: ${error.message}`, "error");
+      } finally {
+        if (epoch === uploadSelectionEpoch) {
+          isReadingUploadFolder = false;
+          setUploadPickersDisabled(false);
+          validateFile();
+        }
+      }
     });
   }
 })();
@@ -1478,6 +1600,11 @@ function validateFile() {
   const files = fileInput.files;
   const convertOptions = document.getElementById("convertOptions");
   fileInput.classList.toggle("has-files", files.length > 0);
+  const paths = Array.from(files).map(uploadRelativePath);
+  const hasFolders = paths.some((path) => path.includes("/"));
+  document.getElementById("uploadSelectionSummary").textContent = files.length
+    ? `${files.length} ${files.length === 1 ? "file" : "files"} selected${hasFolders ? ". Subfolders will be kept." : "."}`
+    : "";
 
   // Show convert options only when at least one selected file is an EPUB.
   const hasEpub = Array.from(files).some((f) => f.name.toLowerCase().endsWith(".epub"));
@@ -2383,8 +2510,8 @@ function reserveAvailableUploadFilename(fileName, usedFileNames) {
   return candidateName;
 }
 
-async function fetchExistingUploadNames() {
-  const response = await fetch(`/api/files?path=${encodeURIComponent(currentPath)}&_=${Date.now()}`);
+async function fetchExistingUploadNames(path = currentPath) {
+  const response = await fetch(`/api/files?path=${encodeURIComponent(path)}&_=${Date.now()}`);
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   const entries = await response.json();
   return new Set(entries.map((entry) => entry.name.toLowerCase()));
@@ -5059,7 +5186,7 @@ function getWsUrl() {
 }
 
 // Upload file via WebSocket (faster, binary protocol)
-function uploadFileWebSocket(file, onProgress, onComplete, onError) {
+function uploadFileWebSocket(file, onProgress, onComplete, onError, path = currentPath) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(getWsUrl());
     currentUploadWs = ws;
@@ -5072,7 +5199,7 @@ function uploadFileWebSocket(file, onProgress, onComplete, onError) {
     ws.onopen = function () {
       console.log("[WS] Connected, starting upload:", file.name);
       // Send start message: START:<filename>:<size>:<path>
-      ws.send(`START:${file.name}:${file.size}:${currentPath}`);
+      ws.send(`START:${file.name}:${file.size}:${path}`);
     };
 
     ws.onmessage = async function (event) {
@@ -5168,14 +5295,14 @@ function uploadFileWebSocket(file, onProgress, onComplete, onError) {
 }
 
 // Upload file via HTTP (fallback method)
-function uploadFileHTTP(file, onProgress, onComplete, onError) {
+function uploadFileHTTP(file, onProgress, onComplete, onError, path = currentPath) {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("file", file, file.name);
 
     const xhr = new XMLHttpRequest();
     currentUploadXhr = xhr;
-    xhr.open("POST", "/upload?path=" + encodeURIComponent(currentPath), true);
+    xhr.open("POST", "/upload?path=" + encodeURIComponent(path), true);
 
     xhr.upload.onprogress = function (e) {
       if (e.lengthComputable && onProgress) {
@@ -5224,9 +5351,10 @@ async function uploadFile() {
   }
 
   isUploadInProgress = true;
-  let usedFileNames;
+  const directoryLists = new Map();
+  const directoryNameSets = new Map();
   try {
-    usedFileNames = await fetchExistingUploadNames();
+    directoryNameSets.set(currentPath.toLowerCase(), await fetchExistingUploadNames());
   } catch (error) {
     isUploadInProgress = false;
     alert(`Failed to check existing files: ${error.message}`);
@@ -5237,7 +5365,7 @@ async function uploadFile() {
   uploadGeneration++;
   const myGeneration = uploadGeneration;
   document.getElementById("uploadModalClose").classList.add("disabled");
-  fileInput.disabled = true;
+  setUploadPickersDisabled(true);
 
   const progressContainer = document.getElementById("progress-container");
   const progressFill = document.getElementById("progress-fill");
@@ -5324,22 +5452,7 @@ async function uploadFile() {
     let convOriginalSize = 0; // Picked-file size; 0 unless conversion succeeded
     let convNewSize = 0; // Generated blob size; 0 unless conversion succeeded
 
-    if (isEpub && document.getElementById("renameFromMetadataToggle").checked) {
-      const originalName = file.name;
-      progressText.style.color = "";
-      progressText.textContent = `Reading metadata for ${file.name} (${currentIndex + 1}/${files.length})...`;
-      file = await maybeRenameEbookFile(file);
-      if (file.name !== originalName) console.log(`[Upload] Renamed from metadata: ${originalName} -> ${file.name}`);
-    }
-
-    const availableName = reserveAvailableUploadFilename(file.name, usedFileNames);
-    if (availableName !== file.name) {
-      console.log(`[Upload] Renamed to avoid collision: ${file.name} -> ${availableName}`);
-      file = new File([file], availableName, {
-        type: file.type,
-        lastModified: file.lastModified,
-      });
-    }
+    let destination = currentPath;
 
     const methodText = useWebSocket ? " [WS]" : " [HTTP]";
     const stageText = needsConversion ? "Converting & uploading" : "Uploading";
@@ -5411,6 +5524,32 @@ async function uploadFile() {
     };
 
     try {
+      const prepared = await prepareUploadDirectory(uploadDestination(originalFile), directoryLists);
+      destination = prepared.path;
+      const directoryKey = destination.toLowerCase();
+      if (!directoryNameSets.has(directoryKey)) directoryNameSets.set(directoryKey, prepared.names);
+      const usedFileNames = directoryNameSets.get(directoryKey);
+      if (operationCancelled) {
+        if (uploadGeneration === myGeneration) restoreAfterCancel();
+        return;
+      }
+      if (isEpub && document.getElementById("renameFromMetadataToggle").checked) {
+        const originalName = file.name;
+        progressText.style.color = "";
+        progressText.textContent = `Reading metadata for ${file.name} (${currentIndex + 1}/${files.length})...`;
+        file = await maybeRenameEbookFile(file);
+        if (file.name !== originalName) console.log(`[Upload] Renamed from metadata: ${originalName} -> ${file.name}`);
+      }
+
+      const availableName = reserveAvailableUploadFilename(file.name, usedFileNames);
+      if (availableName !== file.name) {
+        console.log(`[Upload] Renamed to avoid collision: ${file.name} -> ${availableName}`);
+        file = new File([file], availableName, {
+          type: file.type,
+          lastModified: file.lastModified,
+        });
+      }
+
       // Convert EPUB if needed
       if (needsConversion) {
         progressFill.style.backgroundColor = "#9b59b6"; // Purple for conversion
@@ -5465,9 +5604,9 @@ async function uploadFile() {
       }
 
       if (useWebSocket) {
-        await uploadFileWebSocket(file, onProgress, null, null);
+        await uploadFileWebSocket(file, onProgress, null, null, destination);
       } else {
-        await uploadFileHTTP(file, onProgress, null, null);
+        await uploadFileHTTP(file, onProgress, null, null, destination);
       }
       // Ensure progress bar shows 100% before moving to next file
       progressFill.style.width = "100%";
@@ -5490,7 +5629,7 @@ async function uploadFile() {
         useWebSocket = false;
         // Retry this file with HTTP
         try {
-          await uploadFileHTTP(file, onProgress, null, null);
+          await uploadFileHTTP(file, onProgress, null, null, destination);
           onComplete();
         } catch (httpError) {
           onError(httpError.message);

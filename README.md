@@ -2,6 +2,8 @@
 
 This fork tracks X3 performance work from [uxjulia/CrossInk](https://github.com/uxjulia/CrossInk). The [performance record](PERFORMANCE.md) links the accepted source tags and daily-use checks. Download the app from the [v15 release](https://github.com/Klohto/CrossInk/releases/tag/x3-perf-v15).
 
+[File Manager folder uploads](docs/file-manager-folders.md) keep the folders from an unzipped image collection.
+
 > **This is a personal fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader)** with a focus on improved fonts and minimal reading stats.
 
 ### Supported Devices

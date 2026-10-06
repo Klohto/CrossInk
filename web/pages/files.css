@@ -273,6 +273,20 @@ h2 {
 .upload-form input[type="file"].has-files::file-selector-button {
       background-color: var(--label-color);
     }
+.folder-picker {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+    }
+.folder-picker span {
+      color: var(--label-color);
+      font-size: 0.9em;
+    }
+.folder-picker input[hidden] {
+      display: none;
+    }
 .drop-zone {
       border: 2px dashed var(--border-color);
       border-radius: var(--radius-sm);

@@ -32,3 +32,5 @@ jobs:
           cmake --build build/performance-host --parallel 2
       - name: Check accepted paths
         run: ctest --test-dir build/performance-host --output-on-failure -E 'Png|PNG'
+      - name: Check folder uploads
+        run: node test/scripts/test_folder_upload.mjs
