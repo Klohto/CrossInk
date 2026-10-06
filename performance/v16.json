@@ -1,0 +1,150 @@
+{
+  "iteration": 16,
+  "status": "accepted",
+  "upstream_base": "9914146eeae7b46b300f475a16c32426fc02ec1f",
+  "incremental_base": "35dc4533211e31e092c3192abf4692cd3d4caaa5",
+  "source_tree": "4bc3d0c710cb281d4d472442b6bab885db0a3dd7",
+  "source_commit": "96725899bbadfdc7de907810f9d74133b0d58443",
+  "source_tag": "x3-perf-v16",
+  "build_version": "1.6.1-perf-v16",
+  "sdk_commit": "699370183fa3a0e33c9cb83a36f701bbb6022095",
+  "image_hashes": {
+    "firmware.bin": "3c37c8c74a30026c3e7c0da834ca0de1ad636d6187a67b3692f058e5777276c1",
+    "firmware.elf": "ad0456a6576521c25ebb56011521b618f2bc14ddd158b1a471d18c6282e597f3",
+    "full-flash.bin": "887a8bc257a8360c23a26b214ec47762372031d019130f0ead41c7f78b26a24a"
+  },
+  "host_checks": 954,
+  "deferred_png_checks": 18,
+  "native_screen_captures": 55,
+  "daily_cycle_states": 28,
+  "daily_workflow": "EPUB open, read, page turn, lock, wake to the saved page, repeat lock, reopen saved book",
+  "text_draw_calls": [
+    {
+      "label": "first_open",
+      "baseline_calls": 1867,
+      "reduction_percent": 74.56,
+      "release_calls": 475
+    },
+    {
+      "label": "page1",
+      "baseline_calls": 1992,
+      "reduction_percent": 74.7,
+      "release_calls": 504
+    },
+    {
+      "label": "page2",
+      "baseline_calls": 1944,
+      "reduction_percent": 74.69,
+      "release_calls": 492
+    },
+    {
+      "label": "wake1",
+      "baseline_calls": 1944,
+      "reduction_percent": 74.69,
+      "release_calls": 492
+    },
+    {
+      "label": "page3",
+      "baseline_calls": 2024,
+      "reduction_percent": 74.7,
+      "release_calls": 512
+    },
+    {
+      "label": "page4",
+      "baseline_calls": 1976,
+      "reduction_percent": 74.7,
+      "release_calls": 500
+    },
+    {
+      "label": "wake2",
+      "baseline_calls": 1976,
+      "reduction_percent": 74.7,
+      "release_calls": 500
+    },
+    {
+      "label": "warm_open",
+      "baseline_calls": 1976,
+      "reduction_percent": 74.7,
+      "release_calls": 500
+    }
+  ],
+  "word_width_calls": {
+    "baseline": 2630,
+    "candidate": 2325,
+    "reduction_percent": 11.6
+  },
+  "library_lookup": {
+    "books": 16,
+    "find_own_instructions": {
+      "baseline": 3936,
+      "candidate": 3076
+    },
+    "entry_reads": {
+      "baseline": 136,
+      "candidate": 82
+    },
+    "simulated_cold_ms": {
+      "baseline": 933,
+      "candidate": 934
+    },
+    "simulated_unchanged_ms": {
+      "baseline": 255,
+      "candidate": 255
+    },
+    "reused": 16,
+    "parsed_on_unchanged": 0,
+    "simulated_release_cold_ms": 935
+  },
+  "font_quality": {
+    "changed_pixels": 1304,
+    "changed_regions": [
+      "small caps",
+      "superscripts",
+      "subscripts"
+    ],
+    "pixels_outside_regions": 0,
+    "aa_levels": [
+      0,
+      85,
+      170,
+      255
+    ],
+    "bw_levels": [
+      0,
+      255
+    ]
+  },
+  "custom_bmp_sleep": {
+    "changed_pixels": 3007,
+    "label_bounds_exclusive": [
+      214,
+      748,
+      313,
+      780
+    ],
+    "changed_pixels_outside_label": 0,
+    "wake_pages_restore_exactly": true
+  },
+  "static_ram_bytes": 64904,
+  "linked_flash_bytes": 6303519,
+  "app_bytes": 6317648,
+  "app_free_bytes": 235952,
+  "source_entries": 42260,
+  "binary_groups": 17053,
+  "current_body_reviews": 704,
+  "rank_revision": "v16-4bc3d0c",
+  "rank_archive_sha256": "0975c89d5c40e887ba0bf1d19c72ff9c3c15fd4efa5b614473163d6f464a7d69",
+  "firmware_archive_sha256": "a9427871df1e257761efc9622568b21644d9ab1bb12cef2811099036e2c35edc",
+  "automation_status": "PAUSED",
+  "bmp_investigation": "On hold at the user request",
+  "limits": [
+    "Draw call counts measure text preparation in the fixed native fixture. Panel refresh and SD work have their own costs.",
+    "The 16-book Library unchanged scan uses fewer lookup instructions. Its simulated duration stays at 255 ms.",
+    "The native backend has uncalibrated CPU, SD and panel timing. Daily use rates remain assumptions.",
+    "The full firmware body audit remains open."
+  ],
+  "additional_sleep_modes_checked": [
+    "LIGHT",
+    "BLANK"
+  ]
+}

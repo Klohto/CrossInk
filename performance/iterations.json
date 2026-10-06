@@ -2,7 +2,7 @@
   "upstream": "uxjulia/CrossInk",
   "base": "9914146eeae7b46b300f475a16c32426fc02ec1f",
   "imported_head": "33b50c467d730494f2709d3d099fcecd3dc0853a",
-  "final_tree": "58c54a1afc89a7d6cef903745096d57ce5f7ee84",
+  "final_tree": "4bc3d0c710cb281d4d472442b6bab885db0a3dd7",
   "iterations": [
     {
       "iteration": 1,
@@ -180,7 +180,20 @@
       "commit": "33b50c467d730494f2709d3d099fcecd3dc0853a",
       "tag": "x3-perf-v15",
       "changed_files": 71
+    },
+    {
+      "iteration": 16,
+      "tree": "4bc3d0c710cb281d4d472442b6bab885db0a3dd7",
+      "firmware_sha256": "3c37c8c74a30026c3e7c0da834ca0de1ad636d6187a67b3692f058e5777276c1",
+      "app_bytes": 6317648,
+      "host_checks": 954,
+      "static_ram_bytes": 64904,
+      "linked_flash_bytes": 6303519,
+      "commit": "96725899bbadfdc7de907810f9d74133b0d58443",
+      "tag": "x3-perf-v16",
+      "changed_files": 95
     }
   ],
-  "verification": "All 15 commit trees match the saved accepted snapshots. The final diff has the same scope as the saved v15 tree."
+  "verification": "The imported v1 to v15 trees keep their saved identities. V16 is built from the clean saved source commit. Its native daily cycle restores exact pages after wake and saved-book reopen.",
+  "current_source_commit": "96725899bbadfdc7de907810f9d74133b0d58443"
 }
