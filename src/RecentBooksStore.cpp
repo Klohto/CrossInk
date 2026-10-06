@@ -56,7 +56,7 @@ bool RecentBooksStore::saveToFile() const {
   std::lock_guard<std::mutex> lock(storeMutex);
   JsonDocument doc;
   toJson(doc);
-  return PersistableStoreBase::writeDocToFileAtomically(getFilePath(), doc);
+  return writeDocIfChanged(getFilePath(), doc, true);
 }
 
 void RecentBooksStore::addOrUpdateBook(const std::string& path, const std::string& title, const std::string& author,

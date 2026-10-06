@@ -225,3 +225,62 @@ TEST(BitmapResample, RejectsPaletteThatOverlapsPixelData) {
     EXPECT_EQ(bitmap.parseHeaders(), BmpReaderError::FileInvalid);
   }
 }
+
+TEST(BitmapResample, NativeIndexedPalettesKeepAllLevelsAndPartialRowBits) {
+  constexpr int width = 13;
+  constexpr int height = 2;
+  for (int bpp : {1, 2, 4, 8}) {
+    const int colors = 1 << bpp;
+    const int rowBytes = (width * bpp + 31) / 32 * 4;
+    const int pixels = 54 + colors * 4;
+    std::vector<uint8_t> data(pixels + rowBytes * height, 0);
+    data[0] = 'B';
+    data[1] = 'M';
+    writeLe32(data, 2, data.size());
+    writeLe32(data, 10, pixels);
+    writeLe32(data, 14, 40);
+    writeLe32(data, 18, width);
+    writeLe32(data, 22, height);
+    writeLe16(data, 26, 1);
+    writeLe16(data, 28, bpp);
+    writeLe32(data, 46, colors);
+    for (int i = 0; i < colors; ++i) {
+      const uint8_t gray = bpp == 1 ? (i ? 255 : 0) : (3 - i % 4) * 85;
+      data[54 + i * 4] = data[55 + i * 4] = data[56 + i * 4] = gray;
+    }
+    std::vector<uint8_t> expected((width + 3) / 4, 0);
+    for (int x = 0; x < width; ++x) {
+      const int index = x % colors;
+      const uint8_t level = bpp == 1 ? (index ? 3 : 0) : 3 - index % 4;
+      expected[x / 4] |= level << (6 - (x % 4) * 2);
+      for (int y = 0; y < height; ++y) data[pixels + y * rowBytes + x * bpp / 8] |= index << (8 - bpp - (x * bpp % 8));
+    }
+    HalFile file(data);
+    Bitmap bitmap(file, true);
+    ASSERT_EQ(bitmap.parseHeaders(), BmpReaderError::Ok);
+    std::vector<uint8_t> row(expected.size());
+    std::vector<uint8_t> scratch(rowBytes);
+    for (int pass = 0; pass < 2; ++pass) {
+      ASSERT_EQ(bitmap.rewindToData(), BmpReaderError::Ok);
+      for (int y = 0; y < height; ++y) {
+        ASSERT_EQ(bitmap.readNextRow(row.data(), scratch.data()), BmpReaderError::Ok);
+        EXPECT_EQ(row, expected) << "bpp=" << bpp;
+      }
+    }
+  }
+}
+
+TEST(BitmapResample, RgbWithNativeColorTableStillQuantizesRgbSamples) {
+  auto data = create24BitBmp(13, 2);
+  data.insert(data.begin() + 54, {0, 0, 0, 0});
+  writeLe32(data, 2, data.size());
+  writeLe32(data, 10, 58);
+  writeLe32(data, 46, 1);
+  HalFile file(data);
+  Bitmap bitmap(file, true);
+  ASSERT_EQ(bitmap.parseHeaders(), BmpReaderError::Ok);
+  std::vector<uint8_t> row(4);
+  std::vector<uint8_t> scratch(bitmap.getRowBytes());
+  ASSERT_EQ(bitmap.readNextRow(row.data(), scratch.data()), BmpReaderError::Ok);
+  for (int x = 0; x < 13; ++x) EXPECT_EQ((row[x / 4] >> (6 - (x % 4) * 2)) & 3, (x * 13 + 7) >> 6);
+}

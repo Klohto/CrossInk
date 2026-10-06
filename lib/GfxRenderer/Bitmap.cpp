@@ -181,6 +181,12 @@ BmpReaderError Bitmap::parseHeaders() {
     }
   }
 
+  // Reuse the palette storage for final levels. Native indexed images never
+  // enter error diffusion, so each palette entry needs adjustment only once.
+  if (nativePalette && bpp <= 8) {
+    for (auto& value : paletteLum) value = static_cast<uint8_t>(adjustPixel(value) >> 6);
+  }
+
   // Decide pixel processing strategy:
   //  - Native palette → direct mapping, no processing needed
   //  - High-color + dithering enabled → error-diffusion dithering (Atkinson or Floyd-Steinberg)
@@ -237,7 +243,9 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer) const {
   // Select source rows before dithering. For example, a 480x800 custom
   // wallpaper fitted to an X3 becomes 475x792 here, so error diffusion never
   // has to survive the renderer's later non-integer scale.
-  const int sourceY = std::min(height - 1, (outputRowsRead * height + height / 2) / outputHeight);
+  const int sourceY = outputHeight == height
+                          ? outputRowsRead
+                          : std::min(height - 1, (outputRowsRead * height + height / 2) / outputHeight);
   while (sourceRowsRead <= sourceY) {
     if (file.read(rowBuffer, rowBytes) != rowBytes) return BmpReaderError::ShortReadRow;
     sourceRowsRead++;
@@ -257,8 +265,9 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer) const {
       color = fsDitherer->processPixel(adjustPixel(lum), outputX);
     } else {
       if (nativePalette) {
-        // Palette matches native gray levels: direct mapping (still apply brightness/contrast/gamma)
-        color = static_cast<uint8_t>(adjustPixel(lum) >> 6);
+        // Indexed palettes already hold adjusted levels. RGB samples still
+        // need quantization when their header supplied a native color table.
+        color = bpp <= 8 ? lum : static_cast<uint8_t>(adjustPixel(lum) >> 6);
       } else {
         // Non-native palette with dithering disabled: simple quantization
         color = quantize(adjustPixel(lum), outputX, outputY);
@@ -274,8 +283,9 @@ BmpReaderError Bitmap::readNextRow(uint8_t* data, uint8_t* rowBuffer) const {
     }
   };
 
+  const bool sameWidth = outputWidth == width;
   for (int outputX = 0; outputX < outputWidth; outputX++) {
-    const int sourceX = std::min(width - 1, (outputX * width + width / 2) / outputWidth);
+    const int sourceX = sameWidth ? outputX : std::min(width - 1, (outputX * width + width / 2) / outputWidth);
     uint8_t lum;
     switch (bpp) {
       case 32: {

@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "CoverRefreshBatch.h"
 #include "LibraryInputBuffer.h"
 #include "RecentBooksStore.h"
 #include "activities/Activity.h"
@@ -57,6 +58,7 @@ class LibraryActivity final : public Activity {
   int gridPageStart = 0;
   int loadedGridPageStart = -1;
   int nextGridCoverRow = -1;
+  CoverRefreshBatch gridCoverRefresh;
   int16_t gridCoverWidth = 0;
   int16_t gridCoverHeight = 0;
   int gridProgressRow = -1;

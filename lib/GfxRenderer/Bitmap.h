@@ -98,7 +98,7 @@ class Bitmap {
   int rowBytes = 0;
   int outputWidth = 0;
   int outputHeight = 0;
-  uint8_t paletteLum[256] = {};
+  uint8_t paletteLum[256] = {};  // Luminance, or adjusted 2-bit levels for a native indexed palette
 
   // Dithering state (mutable for const methods)
   mutable int16_t* errorCurRow = nullptr;

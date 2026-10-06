@@ -919,10 +919,14 @@ bool CrossPointSettings::saveToFile() const {
   std::lock_guard<std::mutex> lock(storeMutex);
   JsonDocument doc;
   toJson(doc);
-  return PersistableStoreBase::writeDocToFileAtomically(SETTINGS_FILE_JSON, doc);
+  return writeDocIfChanged(SETTINGS_FILE_JSON, doc, true);
 }
 
 bool CrossPointSettings::loadFromFile() {
+  {
+    std::lock_guard<std::mutex> lock(storeMutex);
+    invalidateSavedDocument();
+  }
   enum class JsonLoadStatus : uint8_t { MissingOrEmpty, Loaded, Failed };
 
   auto loadJsonSettings = [this](const char* path, bool migrateToCurrentPath) -> JsonLoadStatus {

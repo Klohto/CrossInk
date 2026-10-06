@@ -2069,10 +2069,7 @@ void HomeActivity::render(RenderLock&&) {
       coverGridUi->refreshCoverPaths();
       recentsLoaded = false;
     }
-    if (!firstRenderDone) {
-      firstRenderDone = true;
-      requestUpdate();
-    } else if (!recentsLoaded && !recentsLoading) {
+    if (!recentsLoaded && !recentsLoading) {
       loadCoverGridThumbnails();
       coverGridUi->refreshCoverPaths();
       requestUpdate();
@@ -2127,12 +2124,6 @@ void HomeActivity::render(RenderLock&&) {
 
     displayHomeBuffer();
 
-    if (!firstRenderDone) {
-      firstRenderDone = true;
-      requestUpdate();
-      return;
-    }
-
     if (!recentsLoaded && !recentsLoading) {
       recentsLoading = true;
       loadRecentCovers(metrics.homeCoverHeight);
@@ -2185,12 +2176,8 @@ void HomeActivity::render(RenderLock&&) {
 
       displayHomeBuffer();
       if (saveViewedFrame) saveCarouselFrameToDisk(gCarouselCache.keyHash, bookCount, centerIdx, slotIdx);
-      // Mirror the slow-path trigger: generate missing thumbnails on the second
-      // render so the E-ink is already showing something before the SD work starts.
-      if (!firstRenderDone) {
-        firstRenderDone = true;
-        requestUpdate();
-      } else if (!recentsLoaded && !recentsLoading) {
+      // The first frame is already visible. Load covers without repeating it.
+      if (!recentsLoaded && !recentsLoading) {
         recentsLoading = true;
         loadRecentCovers(metrics.homeCoverHeight);
       }
@@ -2252,12 +2239,6 @@ void HomeActivity::render(RenderLock&&) {
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   displayHomeBuffer();
-
-  if (!firstRenderDone) {
-    firstRenderDone = true;
-    requestUpdate();
-    return;
-  }
 
   if (!recentsLoaded && !recentsLoading) {
     recentsLoading = true;

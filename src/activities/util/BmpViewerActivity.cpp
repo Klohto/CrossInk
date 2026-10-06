@@ -217,9 +217,13 @@ void BmpViewerActivity::drawImage() {
         return true;
       };
       renderer.clearScreen();
-      bool success = drawFrame();
-      if (success && bitmap.hasGreyscale() && renderer.supportsAbsoluteGrayscale()) {
-        success = renderer.displayAbsoluteGrayscaleBase();
+      const bool grayscale = bitmap.hasGreyscale() && renderer.supportsAbsoluteGrayscale();
+      const bool direct = grayscale && renderer.supportsDirectGrayscale();
+      // The direct path stages both planes before its single visible refresh.
+      // It needs no B/W decode or dark base frame.
+      bool success = direct || drawFrame();
+      if (success && grayscale) {
+        success = direct ? renderer.displayDirectGrayscaleBase() : renderer.displayAbsoluteGrayscaleBase();
         for (const auto mode : {GfxRenderer::GRAYSCALE_LSB, GfxRenderer::GRAYSCALE_MSB}) {
           if (!success) break;
           success = bitmap.rewindToData() == BmpReaderError::Ok;
@@ -261,11 +265,7 @@ void BmpViewerActivity::drawImage() {
   }
 }
 
-void BmpViewerActivity::onExit() {
-  Activity::onExit();
-  renderer.clearScreen();
-  renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-}
+void BmpViewerActivity::onExit() { Activity::onExit(); }
 
 void BmpViewerActivity::doSetSleepCover() {
   // The popups draw from this task; wait for any image redraw on the render task.

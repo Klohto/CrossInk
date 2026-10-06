@@ -1,3 +1,20 @@
+## [Unreleased]
+
+### Changed
+
+- Use direct grayscale in the X3 BMP viewer. Remove the dark base refresh and one BMP decode.
+- Draw unscaled BMP rows with one coordinate transform per row. Covers, boot and sleep images, and book images use this path.
+- Map native BMP palettes once and skip resampling divisions for images that keep their source size.
+- Reuse glyph lookups during text drawing and measurement across menus and readers.
+- Skip SD writes when settings or other JSON stores have the same saved content.
+- Search TXT line breaks with fewer width checks and reuse the current line buffer.
+- Load Home covers after the first visible frame. Remove the repeated frame before loading starts.
+- Combine quick Library cover completions into fewer screen refreshes. Check input between covers.
+
+### Fixed
+
+- Remove the blank screen refresh when the image viewer exits. The next activity draws its screen.
+
 ## [v1.6.1] - 2026-10-03
 
 ### Added

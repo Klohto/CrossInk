@@ -3,6 +3,38 @@
 #include <HalStorage.h>
 #include <Logging.h>
 #include <ObfuscationUtils.h>
+#include <uzlib.h>
+
+namespace {
+class DocumentChecksum {
+ public:
+  uint32_t crc = 0;
+  size_t length = 0;
+  size_t write(uint8_t byte) { return write(&byte, 1); }
+  size_t write(const uint8_t* data, size_t size) {
+    crc = uzlib_crc32(data, static_cast<unsigned int>(size), crc);
+    length += size;
+    return size;
+  }
+};
+}  // namespace
+
+bool PersistableStoreBase::writeDocIfChanged(const char* path, const JsonDocument& doc, bool atomic) const {
+  DocumentChecksum checksum;
+  serializeJson(doc, checksum);
+  if (savedDocumentValid_ && checksum.crc == savedDocumentCrc_ && checksum.length == savedDocumentLength_ &&
+      Storage.exists(path))
+    return true;
+  const bool saved = atomic ? writeDocToFileAtomically(path, doc) : writeDocToFile(path, doc);
+  if (!saved) {
+    invalidateSavedDocument();
+    return false;
+  }
+  savedDocumentCrc_ = checksum.crc;
+  savedDocumentLength_ = checksum.length;
+  savedDocumentValid_ = true;
+  return true;
+}
 
 bool PersistableStoreBase::writeDocToFile(const char* path, const JsonDocument& doc) {
   Storage.mkdir("/.crosspoint");

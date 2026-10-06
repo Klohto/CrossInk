@@ -47,6 +47,16 @@ class PersistableStoreBase {
   // make arbitrary cross-task access to a store safe.
   mutable bool loadAttempted_ = false;
 
+  // Call under storeMutex. Each store writes to one fixed path. Keep only a
+  // checksum and length, so a save does not retain a second JSON document.
+  bool writeDocIfChanged(const char* path, const JsonDocument& doc, bool atomic = false) const;
+  void invalidateSavedDocument() const { savedDocumentValid_ = false; }
+
+ private:
+  mutable uint32_t savedDocumentCrc_ = 0;
+  mutable size_t savedDocumentLength_ = 0;
+  mutable bool savedDocumentValid_ = false;
+
  public:
   // Public so non-store JSON files (e.g. per-book bookmarks) can reuse them
   // instead of instantiating serializeJson/deserializeJson in their own TU —
@@ -111,7 +121,7 @@ class PersistableStore : public PersistableStoreBase {
     std::lock_guard<std::mutex> lock(storeMutex);
     JsonDocument doc;
     static_cast<const T*>(this)->toJson(doc);
-    return writeDocToFile(T::getFilePath(), doc);
+    return writeDocIfChanged(T::getFilePath(), doc);
   }
 
   bool loadFromFile() {
@@ -120,6 +130,7 @@ class PersistableStore : public PersistableStoreBase {
     bool doResave;
     {
       std::lock_guard<std::mutex> lock(storeMutex);
+      invalidateSavedDocument();
       resaveRequested = false;
       JsonDocument doc;
       if (!readDocFromFile(T::getFilePath(), doc)) {

@@ -61,7 +61,8 @@ void EpdFontFamily::getTextDimensions(const char* string, int* w, int* h, const 
       cp = getFallbackCodepoint(cp, style);
     }
 
-    const bool hasRealGlyph = findGlyphData(cp, style).glyph != nullptr;
+    const GlyphData glyphData = findGlyphData(cp, style);
+    const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     if (!isCombining && !hasRealGlyph && syntheticGlyph::isSpaceFallback(cp)) {
       lastBaseX += fp4::toPixel(prevAdvanceFP);
@@ -148,7 +149,7 @@ void EpdFontFamily::getTextDimensions(const char* string, int* w, int* h, const 
       continue;
     }
 
-    const EpdGlyph* glyph = getGlyph(cp, style);
+    const EpdGlyph* glyph = hasRealGlyph ? glyphData.glyph : getGlyph(cp, style);
     if (!glyph) {
       if (!isCombining) {
         lastBaseX += fp4::toPixel(prevAdvanceFP);

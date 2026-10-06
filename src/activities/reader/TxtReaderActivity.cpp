@@ -19,6 +19,7 @@
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFontSystem.h"
+#include "TxtLineFit.h"
 #include "activities/boot_sleep/SleepCoverAssets.h"
 #include "activities/home/FileBrowserActionActivity.h"
 #include "components/UITheme.h"
@@ -61,25 +62,13 @@ size_t parseAndWrapLines(const uint8_t* buffer, size_t chunkSize, size_t fileOff
         line.clear();
         break;
       }
-      size_t breakPos = line.length();
-      while (breakPos > 0 && renderer.getTextWidth(fontId, line.substr(0, breakPos).c_str()) > vw) {
-        size_t spacePos = line.rfind(' ', breakPos - 1);
-        if (spacePos != std::string::npos && spacePos > 0) {
-          breakPos = spacePos;
-        } else {
-          breakPos--;
-          while (breakPos > 0 && (line[breakPos] & 0xC0) == 0x80) breakPos--;
-        }
-      }
-      if (breakPos == 0) {
-        breakPos = 1;
-        while (breakPos < line.length() && (line[breakPos] & 0xC0) == 0x80) breakPos++;
-      }
+      const size_t breakPos = txtLineFit::breakPosition(
+          line, vw, [&](const char* prefix) { return renderer.getTextWidth(fontId, prefix); });
       outLines.push_back(line.substr(0, breakPos));
       size_t skipChars = breakPos;
       if (breakPos < line.length() && line[breakPos] == ' ') skipChars++;
       lineBytePos += skipChars;
-      line = line.substr(skipChars);
+      line.erase(0, skipChars);
     } while (!line.empty() && static_cast<int>(outLines.size()) < linesPerPage);
 
     if (line.empty()) {

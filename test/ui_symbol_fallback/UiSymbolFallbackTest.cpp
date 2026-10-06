@@ -1,11 +1,22 @@
 #include <EpdFontFamily.h>
 #include <Utf8.h>
+#include <builtinFonts/bitter_10_regular.h>
+#include <builtinFonts/bitter_12_regular.h>
+#include <builtinFonts/bitter_14_regular.h>
+#include <builtinFonts/bitter_16_regular.h>
 #include <builtinFonts/inter_10_bold.h>
 #include <builtinFonts/inter_10_regular.h>
 #include <builtinFonts/inter_12_bold.h>
 #include <builtinFonts/inter_12_regular.h>
+#include <builtinFonts/inter_8_regular.h>
+#include <builtinFonts/lexenddeca_10_regular.h>
+#include <builtinFonts/lexenddeca_12_regular.h>
+#include <builtinFonts/lexenddeca_14_regular.h>
+#include <builtinFonts/lexenddeca_16_regular.h>
 #include <builtinFonts/ui_symbols_10.h>
 #include <gtest/gtest.h>
+
+#include "src/activities/reader/TxtLineFit.h"
 
 namespace {
 constexpr uint32_t POWER = 0x23FB;
@@ -46,4 +57,37 @@ TEST(UiSymbolFallback, PreservesNormalGlyphsAndMissingGlyphBehavior) {
   const EpdFontFamily noFallback(&smallRegular);
   EXPECT_FALSE(noFallback.hasCodepoint(POWER));
   EXPECT_EQ(noFallback.getGlyphData(POWER).glyph, smallRegular.getGlyph(REPLACEMENT_GLYPH));
+}
+
+TEST(UiSymbolFallback, TxtSearchKeepsBreaksWithProductionLigatureAndKerningMetrics) {
+  const EpdFontData* fonts[] = {&inter_8_regular,       &inter_10_regular,      &inter_12_regular,
+                                &bitter_10_regular,     &bitter_12_regular,     &bitter_14_regular,
+                                &bitter_16_regular,     &lexenddeca_10_regular, &lexenddeca_12_regular,
+                                &lexenddeca_14_regular, &lexenddeca_16_regular};
+  for (const auto* data : fonts) {
+    const EpdFont regular(data);
+    const EpdFontFamily font(&regular);
+    for (const char* source : {"office staff fill coffee flasks in the first room", "WWWiiiAVAToflffifffi",
+                               "   AVATAR follows the office staff  ", "hello world"}) {
+      for (int limit = 1; limit < 400; ++limit) {
+        const auto measure = [&](const char* text) {
+          int width, height;
+          font.getTextDimensions(text, &width, &height);
+          return width;
+        };
+        std::string line = source;
+        if (measure(source) <= limit) continue;
+        size_t end = line.size();
+        while (end && measure(line.substr(0, end).c_str()) > limit) {
+          const size_t space = line.rfind(' ', end - 1);
+          if (space != std::string::npos && space > 0)
+            end = space;
+          else
+            --end;
+        }
+        if (!end) end = 1;
+        EXPECT_EQ(txtLineFit::breakPosition(line, limit, measure), end) << source << " limit=" << limit;
+      }
+    }
+  }
 }

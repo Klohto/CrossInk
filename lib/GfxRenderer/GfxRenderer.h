@@ -85,6 +85,8 @@ class GfxRenderer {
   mutable int textClipRight_ = 0;   // half-open
   mutable int textClipBottom_ = 0;  // half-open
 
+  void drawBitmapRow(const uint8_t* row, int width, int x, int y, int left, int right, RenderMode mode) const;
+
   class BitmapScratchLock {
     const GfxRenderer& renderer_;
     bool locked_ = false;

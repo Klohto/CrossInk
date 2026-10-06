@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "BitmapRow.h"
 #include "FontCacheManager.h"
 #include "GlyphBitmap.h"
 
@@ -1170,7 +1171,8 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       cp = font.applyLigatures(cp, textCursor, style);
     }
     cp = font.getFallbackCodepoint(cp, style);
-    const bool hasRealGlyph = font.findGlyphData(cp, style).glyph != nullptr;
+    const auto glyphData = font.findGlyphData(cp, style);
+    const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     // Differential rounding: snap (previous advance + current kern) as one unit so
     // identical character pairs always produce the same pixel step regardless of
@@ -1229,7 +1231,7 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       continue;
     }
 
-    const EpdGlyph* glyph = font.getGlyph(cp, style);
+    const EpdGlyph* glyph = hasRealGlyph ? glyphData.glyph : font.getGlyph(cp, style);
 
     if (!glyph) {
       // Advance was already flushed into lastBaseX above; clear base metrics so the
@@ -1997,6 +1999,31 @@ void GfxRenderer::drawIconInverted(const uint8_t bitmap[], const int x, const in
   }
 }
 
+void GfxRenderer::drawBitmapRow(const uint8_t* row, const int width, const int x, const int y, const int left,
+                                const int right, const RenderMode mode) const {
+  const glyphBitmap::Frame logical{x, y, 1, 0, 0, 1};
+  glyphBitmap::Clip clip{left, 0, right, 1};
+  if (textClipActive_) {
+    glyphBitmap::clipToRect(logical, textClipLeft_, textClipTop_, textClipRight_, textClipBottom_, clip);
+  }
+  glyphBitmap::Target target{
+      _stripActive ? _stripBuf : frameBuffer,  panelWidth, panelWidthBytes, _stripActive ? _stripY0 : 0,
+      _stripActive ? _stripRows : panelHeight, {}};
+  auto& frame = target.frame;
+  rotateCoordinates(orientation, x, y, &frame.x, &frame.y, panelWidth, panelHeight);
+  int nextX, nextY;
+  rotateCoordinates(orientation, x + 1, y, &nextX, &nextY, panelWidth, panelHeight);
+  frame.dxX = nextX - frame.x;
+  frame.dxY = nextY - frame.y;
+  rotateCoordinates(orientation, x, y + 1, &nextX, &nextY, panelWidth, panelHeight);
+  frame.dyX = nextX - frame.x;
+  frame.dyY = nextY - frame.y;
+  const auto plane = mode == BW              ? bitmapRow::Plane::BW
+                     : mode == GRAYSCALE_MSB ? bitmapRow::Plane::GrayMSB
+                                             : bitmapRow::Plane::GrayLSB;
+  bitmapRow::draw(row, width, plane, absoluteGrayPlanes, target, clip);
+}
+
 bool GfxRenderer::drawBitmap(const Bitmap& bitmap, const int x, const int y, const int maxWidth, const int maxHeight,
                              const float cropX, const float cropY) const {
   if (fontCacheManager_ && fontCacheManager_->isScanning()) return false;
@@ -2063,6 +2090,12 @@ bool GfxRenderer::drawBitmap(const Bitmap& bitmap, const int x, const int y, con
 
     if (bmpY < cropPixY) {
       // Skip the row if it's outside the crop area
+      continue;
+    }
+
+    if (!isScaled) {
+      drawBitmapRow(outputRow, bitmap.getWidth(), x - cropPixX, screenY, cropPixX, bitmap.getWidth() - cropPixX,
+                    renderMode);
       continue;
     }
 
@@ -2136,6 +2169,11 @@ bool GfxRenderer::drawBitmap1Bit(const Bitmap& bitmap, const int x, const int y,
       continue;  // Continue reading to keep row counter in sync
     }
     if (screenY < 0) {
+      continue;
+    }
+
+    if (!isScaled) {
+      drawBitmapRow(outputRow, bitmap.getWidth(), x, screenY, 0, bitmap.getWidth(), BW);
       continue;
     }
 
@@ -2856,7 +2894,8 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, const EpdFo
       cp = font.applyLigatures(cp, text, style);
     }
     cp = font.getFallbackCodepoint(cp, style);
-    const bool hasRealGlyph = font.findGlyphData(cp, style).glyph != nullptr;
+    const auto glyphData = font.findGlyphData(cp, style);
+    const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     // Differential rounding: snap (previous advance + current kern) together,
     // matching drawText so measurement and rendering agree exactly.
@@ -2896,7 +2935,7 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, const EpdFo
       continue;
     }
 
-    const EpdGlyph* glyph = font.getGlyph(cp, style);
+    const EpdGlyph* glyph = hasRealGlyph ? glyphData.glyph : font.getGlyph(cp, style);
     prevAdvanceFP = glyph ? glyph->advanceX : 0;
     if ((style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0) {
       prevAdvanceFP = halfAdvanceFP(prevAdvanceFP);
@@ -3012,7 +3051,8 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
 
     cp = font.applyLigatures(cp, text, style);
     cp = font.getFallbackCodepoint(cp, style);
-    const bool hasRealGlyph = font.findGlyphData(cp, style).glyph != nullptr;
+    const auto glyphData = font.findGlyphData(cp, style);
+    const bool hasRealGlyph = glyphData.glyph != nullptr;
 
     // Differential rounding: snap (previous advance + current kern) as one unit,
     // subtracting for the rotated coordinate direction.
@@ -3063,7 +3103,7 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       continue;
     }
 
-    const EpdGlyph* glyph = font.getGlyph(cp, style);
+    const EpdGlyph* glyph = hasRealGlyph ? glyphData.glyph : font.getGlyph(cp, style);
 
     if (!glyph) {
       // Advance was already flushed into lastBaseY above; clear base metrics so the

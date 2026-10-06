@@ -1,0 +1,3 @@
+add_executable(CoverRefreshBatchTest CoverRefreshBatchTest.cpp)
+target_link_libraries(CoverRefreshBatchTest PRIVATE crosspoint_test_common GTest::gtest_main)
+gtest_discover_tests(CoverRefreshBatchTest)

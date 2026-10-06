@@ -108,3 +108,6 @@ add_subdirectory(library_recent_order)
 add_subdirectory(scalable_fonts)
 
 add_subdirectory(glyph_bitmap)
+add_subdirectory(bitmap_row)
+add_subdirectory(txt_line_fit)
+add_subdirectory(cover_refresh_batch)
