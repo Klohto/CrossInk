@@ -206,7 +206,8 @@ bool restore(GfxRenderer& renderer, const std::string& book) {
 bool consumeIfSame(const uint8_t* bw, const size_t bytes, const bool needsGray, const ReaderRaster::Key* key) {
   // Keep the saved footer until the next page turn. A bounded index may refine
   // its page-count estimate during wake; that change needs no second paint.
-  const bool same = restored && (!needsGray || restoredGray) && bytes == restoredHeader.frameBytes &&
+  const bool same = restored && (!key || *key == restoredHeader.raster) && (!needsGray || restoredGray) &&
+                    bytes == restoredHeader.frameBytes &&
                     (ReaderRaster::hash(bw, bytes) == restoredHash ||
                      (key && restoredHeader.footerPixels && *key == restoredHeader.raster &&
                       contentHash(bw, restoredHeader) == restoredContentHash));

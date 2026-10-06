@@ -148,4 +148,18 @@ TEST(InputWorkPriority, WaitsForQuietAndCancelsThePriorTicket) {
   notify(150);
   EXPECT_TRUE(next.interrupted());
 }
+TEST(ReaderWakeFrame, RequiresTheSameProfileWhenTheBwPixelsMatch) {
+  Storage.reset();
+  book("profile.epub");
+  GfxRenderer saved;
+  ReaderRaster::Key key{1, 2, 3, 4, 64, 35, 0};
+  ASSERT_TRUE(ReaderWakeFrame::save(saved, "profile.epub", nullptr, &key, 7));
+  GfxRenderer visible;
+  ASSERT_TRUE(ReaderWakeFrame::restore(visible, "profile.epub"));
+  auto changed = key;
+  changed.profile++;
+  EXPECT_FALSE(ReaderWakeFrame::consumeIfSame(visible.frame.data(), visible.frame.size(), false, &changed));
+  ASSERT_TRUE(ReaderWakeFrame::restore(visible, "profile.epub"));
+  EXPECT_TRUE(ReaderWakeFrame::consumeIfSame(visible.frame.data(), visible.frame.size(), false, &key));
+}
 }  // namespace
