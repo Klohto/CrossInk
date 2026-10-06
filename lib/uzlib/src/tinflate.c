@@ -32,7 +32,7 @@
  *    any source distribution.
  */
 
-/* CrossInk change: inline the one-bit decoder at each call site. */
+/* CrossInk changes: inline one-bit reads and reject failed distance codes. */
 
 #include <assert.h>
 #include <string.h>
@@ -263,14 +263,23 @@ static unsigned int tinf_read_bits(TINF_DATA *d, int num, int base)
 {
    unsigned int val = 0;
 
-   /* read num bits */
-   if (num)
+   unsigned int shift = 0;
+   while (num > 0)
    {
-      unsigned int limit = 1 << (num);
+      unsigned int take;
       unsigned int mask;
-
-      for (mask = 1; mask < limit; mask *= 2)
-         if (tinf_getbit(d)) val += mask;
+      if (!d->bitcount)
+      {
+         d->tag = uzlib_get_byte(d);
+         d->bitcount = 8;
+      }
+      take = (unsigned int)num < d->bitcount ? (unsigned int)num : d->bitcount;
+      mask = (1u << take) - 1;
+      val |= (d->tag & mask) << shift;
+      d->tag >>= take;
+      d->bitcount -= take;
+      shift += take;
+      num -= take;
    }
 
    return val + base;
@@ -439,7 +448,7 @@ static int tinf_inflate_block_data(TINF_DATA *d, TINF_TREE *lt, TINF_TREE *dt)
         d->curlen = tinf_read_bits(d, length_bits[sym], length_base[sym]);
 
         dist = tinf_decode_symbol(d, dt);
-        if (dist >= 30) {
+        if (dist < 0 || dist >= 30) {
             return TINF_DATA_ERROR;
         }
 

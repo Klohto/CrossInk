@@ -15,6 +15,7 @@
 - Select packed glyph pixels with a constant table. Use a fixed decoder for each pixel depth across readers and menus.
 - Call navigation callbacks directly during each poll. Keep the press, hold and release order.
 - Inline the one-bit DEFLATE decoder used for compressed fonts and cached content.
+- Read DEFLATE fields in groups from the current input byte. Keep the bit state and refill order.
 - Compare dictionary suggestions directly with the read buffer to avoid a temporary string for each word.
 - Use direct grayscale in the X3 BMP viewer. Remove the dark base refresh and one BMP decode.
 - Draw unscaled BMP rows with one coordinate transform per row. Covers, boot and sleep images, and book images use this path.
@@ -27,6 +28,7 @@
 
 ### Fixed
 
+- Reject failed DEFLATE distance codes before reading the distance tables.
 - Keep PNG row-filter state when a cover crop skips source rows. Reject unsupported PNG bit depths before allocating or writing output.
 - Remove the blank screen refresh when the image viewer exits. The next activity draws its screen.
 
