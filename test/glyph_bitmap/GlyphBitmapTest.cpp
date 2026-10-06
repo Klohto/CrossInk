@@ -39,7 +39,7 @@ struct Rect {
 };
 
 void compare(int orientation, int rotation, bool twoBit, Plane plane, bool state, int width, int height, int x, int y,
-             int originY, int rows, Rect clip) {
+             int originY, int rows, Rect clip, int packedByte = -1) {
   SCOPED_TRACE(::testing::Message() << orientation << ',' << rotation << ',' << twoBit << ',' << static_cast<int>(plane)
                                     << ',' << state << " size=" << width << 'x' << height << " at=" << x << ',' << y
                                     << " band=" << originY << ',' << rows);
@@ -47,6 +47,7 @@ void compare(int orientation, int rotation, bool twoBit, Plane plane, bool state
   const glyphBitmap::Frame logical{x, y, dxX, dxY, dyX, dyY};
   std::vector<uint8_t> bitmap((width * height * (twoBit ? 2 : 1) + 7) / 8);
   for (size_t i = 0; i < bitmap.size(); ++i) bitmap[i] = static_cast<uint8_t>(i * 73 + 0x1b);
+  if (packedByte >= 0) std::fill(bitmap.begin(), bitmap.end(), static_cast<uint8_t>(packedByte));
   // Nonuniform background and guards verify transparent pixels and all off-band bytes.
   std::vector<uint8_t> expected(rows * STRIDE + 32);
   for (size_t i = 0; i < expected.size(); ++i) expected[i] = static_cast<uint8_t>(i * 53 + 0xa5);
@@ -121,6 +122,22 @@ TEST(GlyphBitmap, EmptyAndFullyClippedGlyphsDoNotWrite) {
       compare(orientation, rotation, true, Plane::BW, true, 0, 0, 0, 0, 0, 32, {0, 0, 40, 32});
       compare(orientation, rotation, true, Plane::BW, true, 11, 9, 100, 100, 0, 32, {0, 0, 40, 32});
       compare(orientation, rotation, true, Plane::BW, true, 11, 9, 0, 0, 0, 32, {12, 10, 15, 20});
+    }
+  }
+}
+
+TEST(GlyphBitmap, AllPackedGroupsMatchPerPixelReference) {
+  for (int packed = 0; packed < 256; ++packed) {
+    for (int orientation = 0; orientation < 4; ++orientation) {
+      for (int rotation = 0; rotation < 2; ++rotation) {
+        for (Plane plane : {Plane::BW, Plane::GrayLSB, Plane::GrayMSB}) {
+          for (bool state : {false, true}) {
+            for (int offset = 0; offset < 8; ++offset) {
+              compare(orientation, rotation, true, plane, state, 4, 1, 8 + offset, 8, 0, 32, {0, 0, 40, 32}, packed);
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 
 // Glyph rasterizer that resolves orientation, clipping and framebuffer
@@ -10,6 +11,21 @@ namespace glyphBitmap {
 
 // Framebuffer plane a glyph is painted into.
 enum class Plane : uint8_t { BW, GrayLSB, GrayMSB };
+
+// Select four pixels from one packed byte. The selected bits keep their
+// source positions so the group loop needs one table read per plane.
+constexpr std::array<std::array<uint8_t, 256>, 3> makeGroupMasks() {
+  std::array<std::array<uint8_t, 256>, 3> result{};
+  for (unsigned value = 0; value < 256; ++value) {
+    const unsigned high = value & 0xaa;
+    const unsigned low = (value << 1) & 0xaa;
+    result[0][value] = high | low;
+    result[1][value] = high & ~low;
+    result[2][value] = high ^ low;
+  }
+  return result;
+}
+inline constexpr auto GROUP_MASKS = makeGroupMasks();
 
 // Position of glyph pixel (0, 0) plus the step for one move along the glyph's
 // x and y axes, all in one coordinate space. The axes must describe an
@@ -91,8 +107,9 @@ __attribute__((always_inline)) inline void paint(uint8_t* buffer, int destinatio
 //   both grays, LSB paints dark gray only. 1bpp glyphs paint ink with state on
 //   every plane.
 // Clipping happens before pixel decoding, so fully hidden glyphs cost nothing.
-inline void draw(const uint8_t* bitmap, int width, int height, bool twoBit, Plane plane, bool state,
-                 const Target& target, Clip clip) {
+template <bool twoBit>
+__attribute__((always_inline)) inline void drawClipped(const uint8_t* bitmap, int width, Plane plane, bool state,
+                                                       const Target& target, Clip clip) {
   // Bit n of levels set means source value n is painted.
   uint8_t levels = 0x02;
   bool clearBits = state;
@@ -100,15 +117,7 @@ inline void draw(const uint8_t* bitmap, int width, int height, bool twoBit, Plan
     levels = plane == Plane::BW ? 0x0e : plane == Plane::GrayMSB ? 0x06 : 0x04;
     if (plane != Plane::BW) clearBits = false;
   }
-
-  // Intersect with the glyph bounds, then with the panel width and the
-  // buffered row band.
-  clip.left = std::max(clip.left, 0);
-  clip.top = std::max(clip.top, 0);
-  clip.right = std::min(clip.right, width);
-  clip.bottom = std::min(clip.bottom, height);
-  clipToRect(target.frame, 0, target.originY, target.width, target.originY + target.rows, clip);
-  if (clip.left >= clip.right || clip.top >= clip.bottom) return;
+  const uint8_t* groupMasks = GROUP_MASKS[plane == Plane::BW ? 0 : plane == Plane::GrayMSB ? 2 : 1].data();
 
   // Walk the framebuffer as a flat bit index. One glyph column advances
   // stepX bits and one glyph row advances stepY bits; each is +/-1 for the
@@ -134,10 +143,11 @@ inline void draw(const uint8_t* bitmap, int width, int height, bool twoBit, Plan
         const uint8_t packed = bitmap[source >> 2];
         // A zero byte contains four white pixels, which leave every plane alone.
         if (packed) {
-          paint(target.buffer, destination, packed >> 6, levels, clearBits);
-          paint(target.buffer, destination + stepX, (packed >> 4) & 3, levels, clearBits);
-          paint(target.buffer, destination + 2 * stepX, (packed >> 2) & 3, levels, clearBits);
-          paint(target.buffer, destination + 3 * stepX, packed & 3, levels, clearBits);
+          const uint8_t selected = groupMasks[packed];
+          if (selected & 0x80) paint(target.buffer, destination, 1, 2, clearBits);
+          if (selected & 0x20) paint(target.buffer, destination + stepX, 1, 2, clearBits);
+          if (selected & 0x08) paint(target.buffer, destination + 2 * stepX, 1, 2, clearBits);
+          if (selected & 0x02) paint(target.buffer, destination + 3 * stepX, 1, 2, clearBits);
         }
         source += 4;
         destination += 4 * stepX;
@@ -152,6 +162,24 @@ inline void draw(const uint8_t* bitmap, int width, int height, bool twoBit, Plan
       ++source;
       destination += stepX;
     }
+  }
+}
+
+// Select the source depth once after clipping. Each loop then uses a fixed
+// pixel decoder, which also avoids table state in the one-bit path.
+inline void draw(const uint8_t* bitmap, int width, int height, bool twoBit, Plane plane, bool state,
+                 const Target& target, Clip clip) {
+  clip.left = std::max(clip.left, 0);
+  clip.top = std::max(clip.top, 0);
+  clip.right = std::min(clip.right, width);
+  clip.bottom = std::min(clip.bottom, height);
+  clipToRect(target.frame, 0, target.originY, target.width, target.originY + target.rows, clip);
+  if (clip.left >= clip.right || clip.top >= clip.bottom) return;
+
+  if (twoBit) {
+    drawClipped<true>(bitmap, width, plane, state, target, clip);
+  } else {
+    drawClipped<false>(bitmap, width, plane, state, target, clip);
   }
 }
 
