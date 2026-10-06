@@ -9,6 +9,7 @@
 - Draw one-bit XTC pages from packed rows. Clip and rotate once for reading and sleep previews.
 - Skip packed groups of four white glyph pixels. They leave every framebuffer plane alone.
 - Call navigation callbacks directly during each poll. Keep the press, hold and release order.
+- Inline the one-bit DEFLATE decoder used for compressed fonts and cached content.
 - Use direct grayscale in the X3 BMP viewer. Remove the dark base refresh and one BMP decode.
 - Draw unscaled BMP rows with one coordinate transform per row. Covers, boot and sleep images, and book images use this path.
 - Map native BMP palettes once and skip resampling divisions for images that keep their source size.

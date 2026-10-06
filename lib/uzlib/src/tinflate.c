@@ -32,6 +32,8 @@
  *    any source distribution.
  */
 
+/* CrossInk change: inline the one-bit decoder at each call site. */
+
 #include <assert.h>
 #include <string.h>
 #include "tinf.h"
@@ -237,7 +239,7 @@ uint32_t tinf_get_be_uint32(TINF_DATA *d)
 }
 
 /* get one bit from source stream */
-static int tinf_getbit(TINF_DATA *d)
+static inline __attribute__((always_inline)) int tinf_getbit(TINF_DATA *d)
 {
    unsigned int bit;
 
